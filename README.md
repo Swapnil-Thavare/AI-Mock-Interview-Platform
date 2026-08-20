@@ -4,22 +4,24 @@ An AI-powered mock interview and candidate assessment platform designed to help 
 
 ## Overview
 
-IntelliInterview lets candidates upload a resume, provide a job description, and participate in a mock interview with personalized questions. After an interview, the platform evaluates answers and provides a performance report. This repository contains the initial foundation and a functional demonstrable prototype using mock data and services.
+IntelliInterview lets candidates create an account, upload a resume, provide a job description, and participate in a mock interview with personalized questions. After an interview, the platform evaluates answers and provides a performance report. This repository now has a PostgreSQL-backed backend with real JWT authentication and a React frontend connected to it.
 
-## Current Skeleton Features
+## Current Features
 
 - **Landing Page** — project overview and calls to action
-- **Authentication Pages** — login and registration forms (mock, ready for real JWT)
-- **Candidate Dashboard** — welcome section, quick stats, quick actions, recent interviews
-- **Resume Page** — file upload with a mock analysis display
-- **Job Description Page** — textarea input with a mock analysis display
-- **Interview Setup** — select role, type, difficulty, and duration
+- **Authentication** — registration, login, logout, and protected routes with JWT
+- **Candidate Dashboard** — welcome section, dynamic stats, quick actions, recent interviews
+- **Resume Page** — PDF upload and mock analysis display
+- **Job Description Page** — create, list, and delete job descriptions with mock analysis
+- **Interview Setup** — select difficulty, type, question count, and duration
 - **Mock Interview** — question-by-question interface with progress tracking, timer, and state management
 - **Interview Result** — mock evaluation report with scores, strengths, and improvement areas
-- **Interview History** — list of previous mock attempts
+- **Interview History** — list of previous attempts retrieved from the database
 - **Profile Page** — view and edit candidate details
-- **FastAPI Backend** — health check, auth, resume, job description, and interview endpoints with mock services
-- **AI Service Abstraction** — mock implementation ready to be replaced with a real AI provider
+- **FastAPI Backend** — REST API with health, auth, resume, job description, and interview endpoints
+- **PostgreSQL Persistence** — SQLAlchemy ORM models with Alembic migrations
+- **JWT Security** — password hashing and access-token authentication
+- **AI Service Abstraction** — mock AI implementation ready to be replaced with a real provider
 
 ## Tech Stack
 
@@ -38,11 +40,16 @@ IntelliInterview lets candidates upload a resume, provide a job description, and
 - FastAPI
 - Pydantic / Pydantic Settings
 - Uvicorn
+- SQLAlchemy 2.x
+- Alembic
+- psycopg (PostgreSQL driver)
+- PyJWT
+- pwdlib (password hashing)
 - pytest
 
-### Database (Planned)
+### Database
 
-- PostgreSQL — not connected yet; current data is in-memory/mock
+- PostgreSQL
 
 ### AI (Planned)
 
@@ -59,13 +66,19 @@ AI-Mock-Interview-Platform/
 ├── backend/
 │   ├── .env.example
 │   ├── requirements.txt
+│   ├── alembic.ini
+│   ├── alembic/
+│   │   ├── env.py
+│   │   ├── script.py.mako
+│   │   └── versions/            # database migrations
 │   ├── app/
 │   │   ├── main.py
-│   │   ├── api/routes/       # FastAPI routers
-│   │   ├── core/             # configuration
-│   │   ├── schemas/          # Pydantic schemas
-│   │   ├── services/         # business logic
-│   │   ├── repositories/     # data-access layer
+│   │   ├── api/routes/          # FastAPI routers
+│   │   ├── core/                # config, database, security
+│   │   ├── models/              # SQLAlchemy ORM models
+│   │   ├── schemas/             # Pydantic schemas
+│   │   ├── services/            # business logic
+│   │   ├── repositories/        # data-access layer
 │   │   └── utils/
 │   └── tests/
 └── frontend/
@@ -79,12 +92,13 @@ AI-Mock-Interview-Platform/
         ├── main.tsx
         ├── App.tsx
         ├── index.css
+        ├── contexts/              # AuthContext
         ├── types/
         ├── utils/mockData.ts
-        ├── services/           # API service layer
-        ├── components/         # reusable UI components
-        ├── layouts/            # dashboard and auth layouts
-        ├── pages/              # route pages
+        ├── services/              # API service layer
+        ├── components/            # reusable UI and auth components
+        ├── layouts/               # dashboard and auth layouts
+        ├── pages/                 # route pages
         └── routes/
 ```
 
@@ -93,12 +107,20 @@ AI-Mock-Interview-Platform/
 ### 1. Clone the repository
 
 ```bash
-cd "C:\Users\Swapnil\OneDrive\Desktop\Study\PBL LY Sem-1\AI-Mock-Interview-Platform"
+cd /path/to/AI-Mock-Interview-Platform
 ```
 
-### 2. Backend setup
+### 2. PostgreSQL setup
 
-Create and activate a Python virtual environment, then install the dependencies from `requirements.txt`.
+Create a PostgreSQL database and user. For example:
+
+```sql
+CREATE DATABASE intelliinterview;
+```
+
+### 3. Backend setup
+
+Create and activate a Python virtual environment, then install dependencies.
 
 ```bash
 cd backend
@@ -107,10 +129,26 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Copy the example environment file and adjust values if needed:
+Copy the example environment file and set the real values:
 
 ```bash
-cp .env.example .env      # On Windows: copy .env.example .env
+copy .env.example .env      # On Linux/macOS: cp .env.example .env
+```
+
+Edit `backend/.env`:
+
+```text
+DATABASE_URL=postgresql+psycopg://username:password@localhost:5432/intelliinterview
+JWT_SECRET_KEY=your-secret-key
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+CORS_ORIGINS=http://localhost:5173
+```
+
+Run Alembic migrations to create the schema:
+
+```bash
+alembic upgrade head
 ```
 
 Start the backend:
@@ -136,26 +174,26 @@ Expected response:
 }
 ```
 
-Run the minimal backend test:
+Run the backend tests:
 
 ```bash
 pytest
 ```
 
-### 3. Frontend setup
+### 4. Frontend setup
 
 In a separate terminal, install dependencies and run the Vite dev server.
 
 ```bash
 cd ../frontend
-copy .env.example .env
+copy .env.example .env      # On Linux/macOS: cp .env.example .env
 npm install
 npm run dev
 ```
 
 The frontend will be available at `http://localhost:5173` by default.
 
-### 4. Basic user flow
+### 5. Basic user flow
 
 1. Open the landing page at `/`
 2. Navigate to `/login` or `/register`
@@ -168,14 +206,24 @@ The frontend will be available at `http://localhost:5173` by default.
 9. View the report at `/interview/result`
 10. View history at `/interviews`
 
+## Database Migrations
+
+All schema changes must be implemented through Alembic migrations. Do **not** use `Base.metadata.create_all()` or modify the database manually.
+
+After changing a SQLAlchemy model, generate a new migration:
+
+```bash
+cd backend
+alembic revision --autogenerate -m "describe change"
+alembic upgrade head
+```
+
 ## Current Status
 
-This is an initial skeleton. All data is currently mock/in-memory and the AI logic is simulated through `AIService` and `EvaluationService`. No real database, authentication provider, or external AI API is integrated yet.
+The application now uses a real PostgreSQL database for persistence and JWT-based authentication. The frontend is connected to the backend API for user data, resumes, job descriptions, interviews, and results. AI logic is still mocked through `AIService` and `EvaluationService` and will be replaced with a real AI provider in a later phase.
 
 ## Future Scope
 
-- PostgreSQL persistence
-- Real JWT authentication
 - Google Gemini integration
 - Resume AI analysis
 - Job description AI analysis
