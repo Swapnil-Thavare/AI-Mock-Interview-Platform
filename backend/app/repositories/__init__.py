@@ -1,11 +1,11 @@
-from .auth_repository import AuthRepository
-from .resume_repository import ResumeRepository
-from .job_description_repository import JobDescriptionRepository
 from .interview_repository import InterviewRepository
+from .job_description_repository import JobDescriptionRepository
+from .resume_repository import ResumeRepository
+from .user_repository import UserRepository
 
 __all__ = [
-    "AuthRepository",
-    "ResumeRepository",
-    "JobDescriptionRepository",
     "InterviewRepository",
+    "JobDescriptionRepository",
+    "ResumeRepository",
+    "UserRepository",
 ]

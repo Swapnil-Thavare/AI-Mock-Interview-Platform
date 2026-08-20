@@ -5,3 +5,8 @@ pydantic-settings
 python-multipart
 pytest
 httpx
+sqlalchemy
+alembic
+psycopg[binary]
+pyjwt
+pwdlib[bcrypt]

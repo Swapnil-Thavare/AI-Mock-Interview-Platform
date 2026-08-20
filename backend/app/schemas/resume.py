@@ -1,10 +1,29 @@
-from typing import List
+from typing import List, Optional
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class Resume(BaseModel):
-    id: int
+class ResumeBase(BaseModel):
     filename: str
-    skills: List[str]
-    extracted_text: str
+    file_size: Optional[int] = None
+    skills: List[str] = []
+    extracted_text: Optional[str] = None
+
+
+class ResumeCreate(ResumeBase):
+    user_id: Optional[UUID] = None
+
+
+class Resume(ResumeBase):
+    id: Optional[UUID] = None
+    user_id: Optional[UUID] = None
+    file_path: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ResumeResponse(ResumeBase):
+    id: UUID
+    user_id: UUID
+    file_path: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
