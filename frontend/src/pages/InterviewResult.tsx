@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -8,12 +8,36 @@ import { interviewService } from '@/services/interviewService';
 import type { InterviewResult as InterviewResultType } from '@/types';
 
 export const InterviewResult: React.FC = () => {
+  const navigate = useNavigate();
   const [result, setResult] = useState<InterviewResultType | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const id = localStorage.getItem('currentInterviewId') || 'i-1';
-    interviewService.end(id).then(setResult);
-  }, []);
+    const id = localStorage.getItem('currentInterviewId');
+    if (!id) {
+      navigate('/interview/setup');
+      return;
+    }
+
+    const load = async () => {
+      try {
+        const data = await interviewService.complete(id);
+        setResult(data);
+      } catch {
+        setError('Could not load results. Please try again.');
+      }
+    };
+
+    load();
+  }, [navigate]);
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="py-20 text-center text-red-600">{error}</div>
+      </DashboardLayout>
+    );
+  }
 
   if (!result) {
     return (
@@ -22,6 +46,10 @@ export const InterviewResult: React.FC = () => {
       </DashboardLayout>
     );
   }
+
+  const total = result.totalQuestions ?? 0;
+  const answered = result.answered ?? 0;
+  const skipped = result.skipped ?? 0;
 
   return (
     <DashboardLayout>
@@ -40,13 +68,13 @@ export const InterviewResult: React.FC = () => {
         <Card className="text-center">
           <h3 className="text-sm text-gray-600">Answered</h3>
           <div className="text-5xl font-extrabold text-green-600">
-            {result.answered}/{result.totalQuestions}
+            {answered}/{total}
           </div>
         </Card>
         <Card className="text-center">
           <h3 className="text-sm text-gray-600">Skipped</h3>
           <div className="text-5xl font-extrabold text-yellow-600">
-            {result.skipped}/{result.totalQuestions}
+            {skipped}/{total}
           </div>
         </Card>
       </div>
@@ -74,26 +102,30 @@ export const InterviewResult: React.FC = () => {
         </div>
       </Card>
 
-      <h3 className="mb-4 mt-8 text-lg font-semibold text-gray-900">Question-level feedback</h3>
-      <div className="space-y-4">
-        {result.questionResults.map((qr) => (
-          <Card key={qr.questionId}>
-            <div className="mb-2 flex items-start justify-between">
-              <h4 className="font-medium text-gray-900">{qr.question}</h4>
-              <Badge color={qr.score >= 70 ? 'green' : qr.score > 0 ? 'yellow' : 'red'}>
-                {qr.score}%
-              </Badge>
-            </div>
-            <p className="mb-2 text-sm text-gray-700">
-              <span className="font-medium">Your answer:</span>{' '}
-              {qr.answer || '(skipped)'}
-            </p>
-            <p className="text-sm text-gray-600">
-              <span className="font-medium">Feedback:</span> {qr.feedback}
-            </p>
-          </Card>
-        ))}
-      </div>
+      {result.questionResults && result.questionResults.length > 0 && (
+        <>
+          <h3 className="mb-4 mt-8 text-lg font-semibold text-gray-900">Question-level feedback</h3>
+          <div className="space-y-4">
+            {result.questionResults.map((qr) => (
+              <Card key={String(qr.questionId)}>
+                <div className="mb-2 flex items-start justify-between">
+                  <h4 className="font-medium text-gray-900">{qr.question}</h4>
+                  <Badge color={qr.score >= 70 ? 'green' : qr.score > 0 ? 'yellow' : 'red'}>
+                    {qr.score}%
+                  </Badge>
+                </div>
+                <p className="mb-2 text-sm text-gray-700">
+                  <span className="font-medium">Your answer:</span>{' '}
+                  {qr.answer || '(skipped)'}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Feedback:</span> {qr.feedback}
+                </p>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
     </DashboardLayout>
   );
 };

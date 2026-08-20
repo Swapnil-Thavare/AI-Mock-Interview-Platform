@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { authService } from '@/services/authService';
 
 export const Register: React.FC = () => {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,8 +19,7 @@ export const Register: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await authService.register({ name, email, password });
-      localStorage.setItem('token', res.token);
+      await register(name, email, password);
       navigate('/dashboard');
     } catch {
       setError('Could not create account. Please try again.');

@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { authService } from '@/services/authService';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -13,9 +13,10 @@ const navItems = [
 
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const handleLogout = () => {
-    authService.logout();
+    logout();
     navigate('/login');
   };
 
@@ -27,7 +28,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             IntelliInterview
           </NavLink>
           <div className="flex items-center gap-4">
-            <span className="hidden text-sm text-gray-600 md:inline">Aarav Sharma</span>
+            <span className="hidden text-sm text-gray-600 md:inline">{user?.name || 'Candidate'}</span>
             <button
               onClick={handleLogout}
               className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"

@@ -20,7 +20,7 @@ export const InterviewSetup: React.FC = () => {
   const handleStart = async () => {
     setLoading(true);
     const interview = await interviewService.create(setup);
-    localStorage.setItem('currentInterviewId', interview.id);
+    localStorage.setItem('currentInterviewId', String(interview.id));
     setLoading(false);
     navigate('/interview');
   };

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { authService } from '@/services/authService';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState('aarav@example.com');
   const [password, setPassword] = useState('password');
   const [loading, setLoading] = useState(false);
@@ -17,8 +18,7 @@ export const Login: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await authService.login({ email, password });
-      localStorage.setItem('token', res.token);
+      await login(email, password);
       navigate('/dashboard');
     } catch {
       setError('Invalid email or password.');

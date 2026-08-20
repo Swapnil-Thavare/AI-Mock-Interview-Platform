@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -6,23 +6,43 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { resumeService } from '@/services/resumeService';
-import { mockResume, mockResumeAnalysis } from '@/utils/mockData';
+import type { Resume as ResumeType } from '@/types';
+import { mockResumeAnalysis } from '@/utils/mockData';
 
 export const Resume: React.FC = () => {
   const [fileName, setFileName] = useState('');
   const [content, setContent] = useState('');
-  const [resume, setResume] = useState(mockResume);
+  const [resume, setResume] = useState<ResumeType | null>(null);
   const [analysis, setAnalysis] = useState(mockResumeAnalysis);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    resumeService
+      .getLatest()
+      .then((data) => {
+        if (data) setResume(data);
+      })
+      .catch(() => {
+        // No resume uploaded yet is OK.
+      });
+  }, []);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const data = await resumeService.upload({ fileName, content });
-    setResume(data);
-    const a = await resumeService.analyze(data.id);
-    setAnalysis(a);
-    setLoading(false);
+    setError('');
+    try {
+      const file = new File([content], fileName || 'resume.pdf', { type: 'application/pdf' });
+      const data = await resumeService.upload(file);
+      setResume(data);
+      const a = await resumeService.analyze(data.id);
+      setAnalysis(a);
+    } catch (err) {
+      setError('Could not upload resume. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -37,6 +57,7 @@ export const Resume: React.FC = () => {
               value={fileName}
               onChange={(e) => setFileName(e.target.value)}
               placeholder="my_resume.pdf"
+              required
             />
             <Textarea
               label="Resume text"
@@ -44,7 +65,9 @@ export const Resume: React.FC = () => {
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Paste your resume content here..."
+              required
             />
+            {error && <p className="text-sm text-red-600">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Analyzing...' : 'Analyze resume'}
             </Button>
@@ -61,7 +84,7 @@ export const Resume: React.FC = () => {
           <Card>
             <h3 className="mb-3 text-lg font-semibold">Detected skills</h3>
             <div className="flex flex-wrap gap-2">
-              {resume.skills.map((skill) => (
+              {(resume?.skills ?? analysis.skills).map((skill) => (
                 <Badge key={skill} color="primary">
                   {skill}
                 </Badge>
@@ -72,7 +95,7 @@ export const Resume: React.FC = () => {
           <Card>
             <h3 className="mb-3 text-lg font-semibold">Strengths</h3>
             <ul className="list-inside list-disc space-y-1 text-sm text-gray-700">
-              {resume.strengths.map((s) => (
+              {analysis.strengths?.map((s) => (
                 <li key={s}>{s}</li>
               ))}
             </ul>
@@ -81,11 +104,24 @@ export const Resume: React.FC = () => {
           <Card>
             <h3 className="mb-3 text-lg font-semibold">Areas to improve</h3>
             <ul className="list-inside list-disc space-y-1 text-sm text-gray-700">
-              {resume.improvements.map((i) => (
+              {analysis.improvements?.map((i) => (
                 <li key={i}>{i}</li>
               ))}
             </ul>
           </Card>
+
+          {analysis.missingKeywords && (
+            <Card>
+              <h3 className="mb-3 text-lg font-semibold">Missing keywords</h3>
+              <div className="flex flex-wrap gap-2">
+                {analysis.missingKeywords.map((k) => (
+                  <Badge key={k} color="red">
+                    {k}
+                  </Badge>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
       </div>
     </DashboardLayout>

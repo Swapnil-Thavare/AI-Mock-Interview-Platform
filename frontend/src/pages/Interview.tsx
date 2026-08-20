@@ -18,15 +18,29 @@ export const Interview: React.FC = () => {
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const id = localStorage.getItem('currentInterviewId') || 'i-1';
+    const id = localStorage.getItem('currentInterviewId');
+    if (!id) {
+      navigate('/interview/setup');
+      return;
+    }
     setInterviewId(id);
-    interviewService.getQuestions(id).then((qs) => {
-      setQuestions(qs);
-      setLoading(false);
-    });
-  }, []);
+
+    const load = async () => {
+      try {
+        const qs = await interviewService.getQuestions(id);
+        setQuestions(qs);
+      } catch {
+        setError('Could not load interview. Please start a new one.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [navigate]);
 
   useEffect(() => {
     setText(answers[questions[index]?.id]?.text ?? '');
@@ -36,8 +50,8 @@ export const Interview: React.FC = () => {
   const isLast = index === questions.length - 1;
   const progress = questions.length ? ((index + 1) / questions.length) * 100 : 0;
 
-  const save = (skipped: boolean) => {
-    if (!current || !interviewId) return;
+  const save = (skipped: boolean): Answer | undefined => {
+    if (!current || !interviewId) return undefined;
     const answer: Answer = {
       questionId: current.id,
       text: skipped ? '' : text,
@@ -53,7 +67,15 @@ export const Interview: React.FC = () => {
     if (!current) return;
     setLoading(true);
     const answer = save(false);
-    await interviewService.submitAnswer(interviewId!, current.id, answer!);
+    if (answer) {
+      try {
+        await interviewService.submitAnswer(interviewId!, current.id, answer);
+      } catch {
+        setError('Could not submit answer. Please try again.');
+        setLoading(false);
+        return;
+      }
+    }
     setLoading(false);
     if (isLast) {
       await handleEnd();
@@ -65,7 +87,14 @@ export const Interview: React.FC = () => {
   const handleSkip = async () => {
     if (!current) return;
     const answer = save(true);
-    await interviewService.submitAnswer(interviewId!, current.id, answer!);
+    if (answer) {
+      try {
+        await interviewService.submitAnswer(interviewId!, current.id, answer);
+      } catch {
+        setError('Could not submit answer. Please try again.');
+        return;
+      }
+    }
     if (isLast) {
       await handleEnd();
     } else {
@@ -76,9 +105,14 @@ export const Interview: React.FC = () => {
   const handleEnd = async () => {
     if (!interviewId) return;
     setLoading(true);
-    await interviewService.end(interviewId);
-    setLoading(false);
-    navigate('/interview/result');
+    setError('');
+    try {
+      await interviewService.complete(interviewId);
+      navigate('/interview/result');
+    } catch {
+      setError('Could not finish the interview. Please try again.');
+      setLoading(false);
+    }
   };
 
   if (loading) {
@@ -108,6 +142,8 @@ export const Interview: React.FC = () => {
           style={{ width: `${progress}%` }}
         />
       </div>
+
+      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
       {current && (
         <>
