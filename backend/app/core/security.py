@@ -10,9 +10,9 @@ from pwdlib.hashers.bcrypt import BcryptHasher
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.database import get_db
+from app.db.db import get_db
 from app.models.user import User
-from app.repositories.user_repository import UserRepository
+from app.services.auth.auth_query import UserQuery
 
 hasher = PasswordHash((BcryptHasher(),))
 
@@ -69,7 +69,7 @@ def get_current_user(
     if user_id is None:
         raise credentials_exception
 
-    user = UserRepository(db).get_by_id(user_id)
+    user = UserQuery(db).get_by_id(user_id)
     if user is None:
         raise credentials_exception
     return user

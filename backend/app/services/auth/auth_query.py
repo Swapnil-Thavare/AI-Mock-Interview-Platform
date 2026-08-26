@@ -7,7 +7,7 @@ from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 
 
-class UserRepository:
+class UserQuery:
     def __init__(self, db: Session):
         self._db = db
 

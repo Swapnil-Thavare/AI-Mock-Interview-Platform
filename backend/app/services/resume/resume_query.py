@@ -3,18 +3,18 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.models.resume import Resume
+from app.models.resume import Resume as ResumeModel
 from app.schemas.resume import ResumeCreate
 
 
-class ResumeRepository:
+class ResumeQuery:
     def __init__(self, db: Session):
         self._db = db
 
     def create(
         self, obj: ResumeCreate, user_id: uuid.UUID, file_path: Optional[str]
-    ) -> Resume:
-        resume = Resume(
+    ) -> ResumeModel:
+        resume = ResumeModel(
             user_id=user_id,
             filename=obj.filename,
             file_size=obj.file_size or 0,
@@ -27,18 +27,18 @@ class ResumeRepository:
         self._db.refresh(resume)
         return resume
 
-    def get_all(self, user_id: uuid.UUID) -> List[Resume]:
+    def get_all(self, user_id: uuid.UUID) -> List[ResumeModel]:
         return (
-            self._db.query(Resume)
-            .filter(Resume.user_id == user_id)
-            .order_by(Resume.created_at.desc())
+            self._db.query(ResumeModel)
+            .filter(ResumeModel.user_id == user_id)
+            .order_by(ResumeModel.created_at.desc())
             .all()
         )
 
-    def get_latest(self, user_id: uuid.UUID) -> Optional[Resume]:
+    def get_latest(self, user_id: uuid.UUID) -> Optional[ResumeModel]:
         return (
-            self._db.query(Resume)
-            .filter(Resume.user_id == user_id)
-            .order_by(Resume.created_at.desc())
+            self._db.query(ResumeModel)
+            .filter(ResumeModel.user_id == user_id)
+            .order_by(ResumeModel.created_at.desc())
             .first()
         )

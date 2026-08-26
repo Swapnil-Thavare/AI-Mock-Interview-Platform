@@ -7,7 +7,7 @@ from app.models.interview import Interview
 from app.schemas.interview import InterviewCreate
 
 
-class InterviewRepository:
+class InterviewQuery:
     def __init__(self, db: Session):
         self._db = db
 

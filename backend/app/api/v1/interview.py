@@ -4,7 +4,8 @@ from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db
+from app.core.security import get_current_user
+from app.db.db import get_db
 from app.models.user import User
 from app.schemas import (
     InterviewAnswer,
@@ -12,9 +13,9 @@ from app.schemas import (
     InterviewResponse,
     InterviewResultResponse,
 )
-from app.services.interview_service import InterviewService
+from app.services.interview.interview_service import Interview
 
-router = APIRouter(prefix="/interviews", tags=["interviews"])
+router = APIRouter()
 
 
 @router.post("", response_model=InterviewResponse)
@@ -23,7 +24,7 @@ def create_interview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return InterviewService(db).create_interview(current_user.id, payload)
+    return Interview(db).create_interview(current_user.id, payload)
 
 
 @router.get("", response_model=List[InterviewResponse])
@@ -31,7 +32,7 @@ def list_interviews(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return InterviewService(db).list_interviews(current_user.id)
+    return Interview(db).list_interviews(current_user.id)
 
 
 @router.get("/{interview_id}", response_model=InterviewResponse)
@@ -40,7 +41,7 @@ def get_interview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return InterviewService(db).get_interview(current_user.id, interview_id)
+    return Interview(db).get_interview(current_user.id, interview_id)
 
 
 @router.post("/{interview_id}/answers")
@@ -50,7 +51,7 @@ def submit_answer(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return InterviewService(db).submit_answer(current_user.id, interview_id, answer)
+    return Interview(db).submit_answer(current_user.id, interview_id, answer)
 
 
 @router.post("/{interview_id}/complete", response_model=InterviewResultResponse)
@@ -59,4 +60,4 @@ def complete_interview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return InterviewService(db).complete_interview(current_user.id, interview_id)
+    return Interview(db).complete_interview(current_user.id, interview_id)

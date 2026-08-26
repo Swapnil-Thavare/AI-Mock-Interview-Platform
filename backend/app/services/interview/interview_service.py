@@ -1,14 +1,13 @@
 from typing import List
 import uuid
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.interview import Interview, InterviewStatus
+from app.exception import CustomException
+from app.models.interview import Interview as InterviewModel, InterviewStatus
 from app.models.interview_answer import InterviewAnswer
 from app.models.interview_question import InterviewQuestion, QuestionType
 from app.models.interview_result import InterviewResult as InterviewResultModel
-from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import (
     InterviewAnswer as InterviewAnswerSchema,
     InterviewCreate,
@@ -16,19 +15,20 @@ from app.schemas.interview import (
     InterviewResult as InterviewResultSchema,
     InterviewResultResponse,
 )
-from app.services.ai_service import AIService
-from app.services.evaluation_service import EvaluationService
+from app.services.ai.ai_service import AIService
+from app.services.evaluation.evaluation_service import EvaluationService
+from app.services.interview.interview_query import InterviewQuery
 
 
-class InterviewService:
+class Interview:
     def __init__(self, db: Session):
         self._db = db
-        self._repo = InterviewRepository(db)
+        self._query = InterviewQuery(db)
         self._ai = AIService()
         self._evaluator = EvaluationService()
 
     def create_interview(self, user_id: uuid.UUID, payload: InterviewCreate) -> InterviewResponse:
-        interview = self._repo.create(payload, user_id)
+        interview = self._query.create(payload, user_id)
         questions = self._ai.generate_questions({}, {})
         for idx, q in enumerate(questions):
             q_type = q.question_type.value
@@ -50,7 +50,7 @@ class InterviewService:
     def list_interviews(self, user_id: uuid.UUID) -> List[InterviewResponse]:
         return [
             InterviewResponse.model_validate(i)
-            for i in self._repo.get_all(user_id)
+            for i in self._query.get_all(user_id)
         ]
 
     def get_interview(self, user_id: uuid.UUID, interview_id: uuid.UUID) -> InterviewResponse:
@@ -64,7 +64,7 @@ class InterviewService:
         question_ids = {q.id for q in interview.questions}
         question_id = answer.question_id
         if question_id not in question_ids:
-            raise HTTPException(status_code=400, detail="Question does not belong to this interview")
+            raise CustomException(400, "Question does not belong to this interview")
         db_answer = InterviewAnswer(
             interview_id=interview.id,
             question_id=question_id,
@@ -78,10 +78,7 @@ class InterviewService:
     def complete_interview(self, user_id: uuid.UUID, interview_id: uuid.UUID) -> InterviewResultResponse:
         interview = self._get_owned_interview(user_id, interview_id)
         answers = [
-            {
-                "question_id": str(a.question_id),
-                "answer_text": a.answer_text,
-            }
+            {"question_id": str(a.question_id), "answer_text": a.answer_text}
             for a in interview.answers
         ]
         result_schema: InterviewResultSchema = self._evaluator.evaluate(interview.id, answers)
@@ -100,8 +97,8 @@ class InterviewService:
 
     def _get_owned_interview(
         self, user_id: uuid.UUID, interview_id: uuid.UUID
-    ) -> Interview:
-        interview = self._repo.get_by_id(interview_id)
+    ) -> InterviewModel:
+        interview = self._query.get_by_id(interview_id)
         if not interview or interview.user_id != user_id:
-            raise HTTPException(status_code=404, detail="Interview not found")
+            raise CustomException(404, "Interview not found")
         return interview

@@ -1,8 +1,11 @@
+"""FastAPI root app — mirrors the reference's router mounting pattern."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, health, interview, job_description, resume
-from app.core.config import settings
+from app.api.v1 import router_v1
+from app.core.config import get_settings
+
+settings = get_settings()
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -14,8 +17,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(health.router, prefix="/api/v1")
-app.include_router(auth.router, prefix="/api/v1")
-app.include_router(resume.router, prefix="/api/v1")
-app.include_router(job_description.router, prefix="/api/v1")
-app.include_router(interview.router, prefix="/api/v1")
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": settings.PROJECT_NAME}
+
+
+app.include_router(router_v1, prefix="/api/v1")

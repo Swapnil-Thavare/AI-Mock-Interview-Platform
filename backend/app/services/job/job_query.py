@@ -7,7 +7,7 @@ from app.models.job_description import JobDescription
 from app.schemas.job_description import JobDescriptionCreate
 
 
-class JobDescriptionRepository:
+class JobDescriptionQuery:
     def __init__(self, db: Session):
         self._db = db
 
@@ -32,7 +32,7 @@ class JobDescriptionRepository:
             .all()
         )
 
-    def get_by_id(self, job_id: uuid.UUID) -> Optional[JobDescription]:
+    def get_by_id(self, job_id) -> Optional[JobDescription]:
         if isinstance(job_id, str):
             job_id = uuid.UUID(job_id)
         return self._db.get(JobDescription, job_id)
