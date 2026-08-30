@@ -19,7 +19,7 @@ IntelliInterview lets candidates create an account, upload a resume, provide a j
 - **Interview History** — list of previous attempts retrieved from the database
 - **Profile Page** — view and edit candidate details
 - **FastAPI Backend** — REST API with health, auth, resume, job description, and interview endpoints
-- **PostgreSQL Persistence** — SQLAlchemy ORM models with Alembic migrations
+- **PostgreSQL Persistence** — SQLModel models with asyncpg and Alembic migrations
 - **JWT Security** — password hashing and access-token authentication
 - **AI Service Abstraction** — mock AI implementation ready to be replaced with a real provider
 
@@ -40,12 +40,13 @@ IntelliInterview lets candidates create an account, upload a resume, provide a j
 - FastAPI
 - Pydantic / Pydantic Settings
 - Uvicorn
-- SQLAlchemy 2.x
+- SQLModel
+- SQLAlchemy 2.x (async)
 - Alembic
-- psycopg (PostgreSQL driver)
+- asyncpg (PostgreSQL driver)
 - PyJWT
 - pwdlib (password hashing)
-- pytest
+- pytest / pytest-asyncio
 
 ### Database
 
@@ -62,23 +63,25 @@ IntelliInterview lets candidates create an account, upload a resume, provide a j
 ```text
 AI-Mock-Interview-Platform/
 ├── .gitignore
+├── AGENTS.md
 ├── README.md
 ├── backend/
 │   ├── .env.example
 │   ├── requirements.txt
 │   ├── alembic.ini
+│   ├── pytest.ini
 │   ├── alembic/
 │   │   ├── env.py
 │   │   ├── script.py.mako
 │   │   └── versions/            # database migrations
 │   ├── app/
 │   │   ├── main.py
-│   │   ├── api/routes/          # FastAPI routers
-│   │   ├── core/                # config, database, security
-│   │   ├── models/              # SQLAlchemy ORM models
+│   │   ├── api/v1/              # FastAPI routers
+│   │   ├── core/                # config, security
+│   │   ├── db/                  # async engine and session
+│   │   ├── models/              # SQLModel models
 │   │   ├── schemas/             # Pydantic schemas
-│   │   ├── services/            # business logic
-│   │   ├── repositories/        # data-access layer
+│   │   ├── services/            # business logic + queries
 │   │   └── utils/
 │   └── tests/
 └── frontend/
@@ -98,8 +101,7 @@ AI-Mock-Interview-Platform/
         ├── services/              # API service layer
         ├── components/            # reusable UI and auth components
         ├── layouts/               # dashboard and auth layouts
-        ├── pages/                 # route pages
-        └── routes/
+        └── pages/                 # route pages
 ```
 
 ## Running Locally
@@ -116,6 +118,7 @@ Create a PostgreSQL database and user. For example:
 
 ```sql
 CREATE DATABASE intelliinterview;
+CREATE DATABASE intelliinterview_test;
 ```
 
 ### 3. Backend setup
@@ -138,14 +141,15 @@ copy .env.example .env      # On Linux/macOS: cp .env.example .env
 Edit `backend/.env`:
 
 ```text
-DATABASE_URL=postgresql+psycopg://username:password@localhost:5432/intelliinterview
+DATABASE_URL=postgresql+asyncpg://username:password@localhost:5432/intelliinterview
+DATABASE_URL_TEST=postgresql+asyncpg://username:password@localhost:5432/intelliinterview_test
 JWT_SECRET_KEY=your-secret-key
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 CORS_ORIGINS=http://localhost:5173
 ```
 
-Run Alembic migrations to create the schema:
+Run Alembic migrations to bring the schema to the latest version:
 
 ```bash
 alembic upgrade head
@@ -162,7 +166,7 @@ The API will be available at `http://localhost:8000`.
 Example health check:
 
 ```bash
-curl http://localhost:8000/api/v1/health
+curl http://localhost:8000/health
 ```
 
 Expected response:
@@ -208,13 +212,26 @@ The frontend will be available at `http://localhost:5173` by default.
 
 ## Database Migrations
 
-All schema changes must be implemented through Alembic migrations. Do **not** use `Base.metadata.create_all()` or modify the database manually.
+All schema changes must be implemented through Alembic migrations. Do **not** use `SQLModel.metadata.create_all()` or `Base.metadata.create_all()` inside the application. Never create or alter tables manually.
 
-After changing a SQLAlchemy model, generate a new migration:
+The final database stack is:
 
-```bash
-cd backend
+- **ORM:** SQLModel
+- **PostgreSQL driver:** asyncpg
+- **Migrations:** Alembic
+
+Migration workflow:
+
+```
+Modify SQLModel model
+   |
+   v
 alembic revision --autogenerate -m "describe change"
+   |
+   v
+Review the generated migration
+   |
+   v
 alembic upgrade head
 ```
 
