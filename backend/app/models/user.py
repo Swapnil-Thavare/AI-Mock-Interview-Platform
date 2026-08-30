@@ -1,42 +1,70 @@
 import uuid
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 
-from sqlalchemy import Boolean, String, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+import sqlalchemy as sa
+from sqlmodel import Field, Relationship, SQLModel
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import created_at_field, updated_at_field
 
 
-class User(Base, TimestampMixin):
+class User(SQLModel, table=True):
     __tablename__ = "users"
+    __table_args__ = (sa.Index("ix_users_email", "email", unique=True),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=sa.Column(sa.UUID, primary_key=True),
     )
-    email: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False, index=True
+    email: str = Field(sa_column=sa.Column(sa.String(255), nullable=False))
+    full_name: str = Field(
+        sa_column=sa.Column(sa.String(255), nullable=False)
     )
-    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    phone: Mapped[str] = mapped_column(String(50), nullable=True)
-    skills: Mapped[List[str]] = mapped_column(JSONB, nullable=True, default=list)
-    education: Mapped[List[str]] = mapped_column(JSONB, nullable=True, default=list)
-    experience: Mapped[List[str]] = mapped_column(JSONB, nullable=True, default=list)
+    hashed_password: str = Field(
+        sa_column=sa.Column(sa.String(255), nullable=False)
+    )
+    is_active: bool = Field(
+        default=True,
+        sa_column=sa.Column(
+            sa.Boolean, nullable=False, server_default=sa.text("true")
+        ),
+    )
+    phone: Optional[str] = Field(
+        default=None, sa_column=sa.Column(sa.String(50), nullable=True)
+    )
+    skills: List[str] = Field(
+        default=[],
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
+    education: List[str] = Field(
+        default=[],
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
+    experience: List[str] = Field(
+        default=[],
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
+    created_at: datetime | None = created_at_field()
+    updated_at: datetime | None = updated_at_field()
 
-    resumes: Mapped[List["Resume"]] = relationship(
-        "Resume", back_populates="owner", cascade="all, delete-orphan", lazy="selectin"
-    )
-    job_descriptions: Mapped[List["JobDescription"]] = relationship(
-        "JobDescription",
+    resumes: List["Resume"] = Relationship(
         back_populates="owner",
-        cascade="all, delete-orphan",
-        lazy="selectin",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "lazy": "selectin",
+        },
     )
-    interviews: Mapped[List["Interview"]] = relationship(
-        "Interview",
+    job_descriptions: List["JobDescription"] = Relationship(
         back_populates="owner",
-        cascade="all, delete-orphan",
-        lazy="selectin",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "lazy": "selectin",
+        },
+    )
+    interviews: List["Interview"] = Relationship(
+        back_populates="owner",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "lazy": "selectin",
+        },
     )

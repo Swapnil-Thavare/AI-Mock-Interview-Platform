@@ -1,12 +1,12 @@
 import enum
 import uuid
+from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+import sqlalchemy as sa
+from sqlmodel import Field, Relationship, SQLModel
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import created_at_field, updated_at_field
 
 
 class QuestionType(str, enum.Enum):
@@ -14,28 +14,53 @@ class QuestionType(str, enum.Enum):
     BEHAVIORAL = "behavioral"
 
 
-class InterviewQuestion(Base, TimestampMixin):
+class InterviewQuestion(SQLModel, table=True):
     __tablename__ = "interview_questions"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=sa.Column(sa.UUID, primary_key=True),
     )
-    interview_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("interviews.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    interview_id: uuid.UUID = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.UUID,
+            sa.ForeignKey("interviews.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
     )
-    question_text: Mapped[str] = mapped_column(Text, nullable=False)
-    question_type: Mapped[QuestionType] = mapped_column(
-        Enum(QuestionType, name="question_type"),
+    question_text: str = Field(
+        sa_column=sa.Column(sa.Text, nullable=False)
+    )
+    question_type: QuestionType = Field(
         default=QuestionType.TECHNICAL,
-        nullable=False,
+        sa_column=sa.Column(
+            sa.Enum(
+                QuestionType,
+                name="question_type",
+                create_type=False,
+            ),
+            nullable=False,
+            server_default=sa.text("'TECHNICAL'"),
+        ),
     )
-    order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    category: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    order: int = Field(
+        default=0,
+        sa_column=sa.Column(sa.Integer, nullable=False),
+    )
+    category: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.String(255), nullable=True),
+    )
+    created_at: datetime | None = created_at_field()
+    updated_at: datetime | None = updated_at_field()
 
-    interview: Mapped["Interview"] = relationship("Interview", back_populates="questions")
-    answers: Mapped[List["InterviewAnswer"]] = relationship(
-        "InterviewAnswer", back_populates="question", cascade="all, delete-orphan"
+    interview: "Interview" = Relationship(back_populates="questions")
+    answers: List["InterviewAnswer"] = Relationship(
+        back_populates="question",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "lazy": "selectin",
+        },
     )

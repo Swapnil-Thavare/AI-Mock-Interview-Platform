@@ -1,17 +1,29 @@
-from typing import List, Optional
 import uuid
+from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.interview import Interview
 from app.schemas.interview import InterviewCreate
 
 
 class InterviewQuery:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self._db = db
 
-    def create(self, obj: InterviewCreate, user_id: uuid.UUID) -> Interview:
+    @staticmethod
+    def _with_relationships(stmt):
+        return stmt.options(
+            selectinload(Interview.questions),
+            selectinload(Interview.answers),
+            selectinload(Interview.result),
+        )
+
+    async def create(
+        self, obj: InterviewCreate, user_id: uuid.UUID
+    ) -> Interview:
         interview = Interview(
             user_id=user_id,
             resume_id=obj.resume_id,
@@ -19,25 +31,28 @@ class InterviewQuery:
             title=obj.title,
         )
         self._db.add(interview)
-        self._db.commit()
-        self._db.refresh(interview)
+        await self._db.commit()
+        await self._db.refresh(interview)
         return interview
 
-    def get_all(self, user_id: uuid.UUID) -> List[Interview]:
-        return (
-            self._db.query(Interview)
-            .filter(Interview.user_id == user_id)
+    async def get_all(self, user_id: uuid.UUID) -> List[Interview]:
+        stmt = (
+            select(Interview)
+            .where(Interview.user_id == user_id)
             .order_by(Interview.created_at.desc())
-            .all()
         )
+        result = await self._db.exec(self._with_relationships(stmt))
+        return result.all()
 
-    def get_by_id(self, interview_id) -> Optional[Interview]:
+    async def get_by_id(self, interview_id) -> Optional[Interview]:
         if isinstance(interview_id, str):
             interview_id = uuid.UUID(interview_id)
-        return self._db.get(Interview, interview_id)
+        stmt = select(Interview).where(Interview.id == interview_id)
+        result = await self._db.exec(self._with_relationships(stmt))
+        return result.first()
 
-    def save(self, interview: Interview) -> Interview:
+    async def save(self, interview: Interview) -> Interview:
         self._db.add(interview)
-        self._db.commit()
-        self._db.refresh(interview)
+        await self._db.commit()
+        await self._db.refresh(interview)
         return interview

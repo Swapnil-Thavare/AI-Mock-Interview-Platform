@@ -1,31 +1,48 @@
 import uuid
+from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import ForeignKey, JSON, String, Text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+import sqlalchemy as sa
+from sqlmodel import Field, Relationship, SQLModel
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import created_at_field, updated_at_field
 
 
-class JobDescription(Base, TimestampMixin):
+class JobDescription(SQLModel, table=True):
     __tablename__ = "job_descriptions"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=sa.Column(sa.UUID, primary_key=True),
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    user_id: uuid.UUID = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.UUID,
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
     )
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    company: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    required_skills: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)
+    title: str = Field(
+        sa_column=sa.Column(sa.String(255), nullable=False)
+    )
+    company: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.String(255), nullable=True),
+    )
+    description: str = Field(
+        sa_column=sa.Column(sa.Text, nullable=False)
+    )
+    required_skills: List[str] = Field(
+        default=[],
+        sa_column=sa.Column(sa.JSON, nullable=False),
+    )
+    created_at: datetime | None = created_at_field()
+    updated_at: datetime | None = updated_at_field()
 
-    owner: Mapped["User"] = relationship("User", back_populates="job_descriptions")
-    interviews: Mapped[List["Interview"]] = relationship(
-        "Interview", back_populates="job_description"
+    owner: "User" = Relationship(back_populates="job_descriptions")
+    interviews: List["Interview"] = Relationship(
+        back_populates="job_description",
+        sa_relationship_kwargs={"lazy": "selectin"},
     )

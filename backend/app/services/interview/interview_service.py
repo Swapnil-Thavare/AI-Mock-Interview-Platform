@@ -1,7 +1,9 @@
 from typing import List
 import uuid
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.exception import CustomException
 from app.models.interview import Interview as InterviewModel, InterviewStatus
@@ -21,14 +23,16 @@ from app.services.interview.interview_query import InterviewQuery
 
 
 class Interview:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self._db = db
         self._query = InterviewQuery(db)
         self._ai = AIService()
         self._evaluator = EvaluationService()
 
-    def create_interview(self, user_id: uuid.UUID, payload: InterviewCreate) -> InterviewResponse:
-        interview = self._query.create(payload, user_id)
+    async def create_interview(
+        self, user_id: uuid.UUID, payload: InterviewCreate
+    ) -> InterviewResponse:
+        interview = await self._query.create(payload, user_id)
         questions = self._ai.generate_questions({}, {})
         for idx, q in enumerate(questions):
             q_type = q.question_type.value
@@ -43,45 +47,68 @@ class Interview:
             )
             self._db.add(db_question)
         interview.status = InterviewStatus.IN_PROGRESS
-        self._db.commit()
-        self._db.refresh(interview)
+        await self._db.commit()
+        stmt = (
+            select(InterviewModel)
+            .where(InterviewModel.id == interview.id)
+            .options(
+                selectinload(InterviewModel.questions),
+                selectinload(InterviewModel.answers),
+                selectinload(InterviewModel.result),
+            )
+        )
+        result = await self._db.exec(stmt)
+        interview = result.first()
         return InterviewResponse.model_validate(interview)
 
-    def list_interviews(self, user_id: uuid.UUID) -> List[InterviewResponse]:
+    async def list_interviews(
+        self, user_id: uuid.UUID
+    ) -> List[InterviewResponse]:
+        interviews = await self._query.get_all(user_id)
         return [
-            InterviewResponse.model_validate(i)
-            for i in self._query.get_all(user_id)
+            InterviewResponse.model_validate(i) for i in interviews
         ]
 
-    def get_interview(self, user_id: uuid.UUID, interview_id: uuid.UUID) -> InterviewResponse:
-        interview = self._get_owned_interview(user_id, interview_id)
+    async def get_interview(
+        self, user_id: uuid.UUID, interview_id: uuid.UUID
+    ) -> InterviewResponse:
+        interview = await self._get_owned_interview(user_id, interview_id)
         return InterviewResponse.model_validate(interview)
 
-    def submit_answer(
-        self, user_id: uuid.UUID, interview_id: uuid.UUID, answer: InterviewAnswerSchema
+    async def submit_answer(
+        self,
+        user_id: uuid.UUID,
+        interview_id: uuid.UUID,
+        answer: InterviewAnswerSchema,
     ) -> dict:
-        interview = self._get_owned_interview(user_id, interview_id)
+        interview = await self._get_owned_interview(user_id, interview_id)
         question_ids = {q.id for q in interview.questions}
         question_id = answer.question_id
         if question_id not in question_ids:
-            raise CustomException(400, "Question does not belong to this interview")
+            raise CustomException(
+                400, "Question does not belong to this interview"
+            )
         db_answer = InterviewAnswer(
             interview_id=interview.id,
             question_id=question_id,
             answer_text=answer.answer_text,
         )
         self._db.add(db_answer)
-        self._db.commit()
-        self._db.refresh(db_answer)
+        await self._db.commit()
+        await self._db.refresh(db_answer)
         return {"message": "Answer submitted", "question_id": str(question_id)}
 
-    def complete_interview(self, user_id: uuid.UUID, interview_id: uuid.UUID) -> InterviewResultResponse:
-        interview = self._get_owned_interview(user_id, interview_id)
+    async def complete_interview(
+        self, user_id: uuid.UUID, interview_id: uuid.UUID
+    ) -> InterviewResultResponse:
+        interview = await self._get_owned_interview(user_id, interview_id)
         answers = [
             {"question_id": str(a.question_id), "answer_text": a.answer_text}
             for a in interview.answers
         ]
-        result_schema: InterviewResultSchema = self._evaluator.evaluate(interview.id, answers)
+        result_schema: InterviewResultSchema = self._evaluator.evaluate(
+            interview.id, answers
+        )
         result = InterviewResultModel(
             interview_id=interview.id,
             score=result_schema.score,
@@ -91,14 +118,14 @@ class Interview:
         )
         self._db.add(result)
         interview.status = InterviewStatus.COMPLETED
-        self._db.commit()
-        self._db.refresh(result)
+        await self._db.commit()
+        await self._db.refresh(result)
         return InterviewResultResponse.model_validate(result)
 
-    def _get_owned_interview(
+    async def _get_owned_interview(
         self, user_id: uuid.UUID, interview_id: uuid.UUID
     ) -> InterviewModel:
-        interview = self._query.get_by_id(interview_id)
+        interview = await self._query.get_by_id(interview_id)
         if not interview or interview.user_id != user_id:
             raise CustomException(404, "Interview not found")
         return interview

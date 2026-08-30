@@ -1,33 +1,47 @@
 import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+import sqlalchemy as sa
+from sqlmodel import Field, Relationship, SQLModel
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import created_at_field, updated_at_field
+
+if TYPE_CHECKING:
+    from app.models.interview import Interview
+    from app.models.interview_question import InterviewQuestion
 
 
-class InterviewAnswer(Base, TimestampMixin):
+class InterviewAnswer(SQLModel, table=True):
     __tablename__ = "interview_answers"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=sa.Column(sa.UUID, primary_key=True),
     )
-    interview_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("interviews.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    interview_id: uuid.UUID = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.UUID,
+            sa.ForeignKey("interviews.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
     )
-    question_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("interview_questions.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    question_id: uuid.UUID = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.UUID,
+            sa.ForeignKey("interview_questions.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
     )
-    answer_text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer_text: str = Field(
+        sa_column=sa.Column(sa.Text, nullable=False)
+    )
+    created_at: datetime | None = created_at_field()
+    updated_at: datetime | None = updated_at_field()
 
-    interview: Mapped["Interview"] = relationship("Interview", back_populates="answers")
-    question: Mapped["InterviewQuestion"] = relationship(
-        "InterviewQuestion", back_populates="answers"
-    )
+    interview: "Interview" = Relationship(back_populates="answers")
+    question: "InterviewQuestion" = Relationship(back_populates="answers")

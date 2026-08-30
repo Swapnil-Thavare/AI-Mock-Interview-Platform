@@ -3,20 +3,22 @@ from typing import Optional
 
 import jwt
 from fastapi import Depends, HTTPException, status
-from jwt.exceptions import ExpiredSignatureError, PyJWTError
 from fastapi.security import OAuth2PasswordBearer
+from jwt.exceptions import ExpiredSignatureError, PyJWTError
 from pwdlib import PasswordHash
 from pwdlib.hashers.bcrypt import BcryptHasher
-from sqlalchemy.orm import Session
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
-from app.db.db import get_db
+from app.db.db import get_session
 from app.models.user import User
 from app.services.auth.auth_query import UserQuery
 
 hasher = PasswordHash((BcryptHasher(),))
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login", auto_error=False
+)
 
 
 def get_password_hash(password: str) -> str:
@@ -27,7 +29,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return hasher.verify(plain_password, hashed_password)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    data: dict, expires_delta: Optional[timedelta] = None
+) -> str:
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -44,7 +48,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 def decode_access_token(token: str) -> dict:
     try:
         return jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
         )
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
@@ -52,9 +58,9 @@ def decode_access_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def get_current_user(
+async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_session),
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -69,7 +75,7 @@ def get_current_user(
     if user_id is None:
         raise credentials_exception
 
-    user = UserQuery(db).get_by_id(user_id)
+    user = await UserQuery(db).get_by_id(user_id)
     if user is None:
         raise credentials_exception
     return user

@@ -1,18 +1,22 @@
-from typing import List, Optional
 import uuid
+from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.resume import Resume as ResumeModel
 from app.schemas.resume import ResumeCreate
 
 
 class ResumeQuery:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self._db = db
 
-    def create(
-        self, obj: ResumeCreate, user_id: uuid.UUID, file_path: Optional[str]
+    async def create(
+        self,
+        obj: ResumeCreate,
+        user_id: uuid.UUID,
+        file_path: Optional[str],
     ) -> ResumeModel:
         resume = ResumeModel(
             user_id=user_id,
@@ -23,22 +27,22 @@ class ResumeQuery:
             skills=obj.skills or [],
         )
         self._db.add(resume)
-        self._db.commit()
-        self._db.refresh(resume)
+        await self._db.commit()
+        await self._db.refresh(resume)
         return resume
 
-    def get_all(self, user_id: uuid.UUID) -> List[ResumeModel]:
-        return (
-            self._db.query(ResumeModel)
-            .filter(ResumeModel.user_id == user_id)
+    async def get_all(self, user_id: uuid.UUID) -> List[ResumeModel]:
+        result = await self._db.exec(
+            select(ResumeModel)
+            .where(ResumeModel.user_id == user_id)
             .order_by(ResumeModel.created_at.desc())
-            .all()
         )
+        return result.all()
 
-    def get_latest(self, user_id: uuid.UUID) -> Optional[ResumeModel]:
-        return (
-            self._db.query(ResumeModel)
-            .filter(ResumeModel.user_id == user_id)
+    async def get_latest(self, user_id: uuid.UUID) -> Optional[ResumeModel]:
+        result = await self._db.exec(
+            select(ResumeModel)
+            .where(ResumeModel.user_id == user_id)
             .order_by(ResumeModel.created_at.desc())
-            .first()
         )
+        return result.first()

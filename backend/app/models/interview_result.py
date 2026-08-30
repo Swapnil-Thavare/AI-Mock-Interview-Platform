@@ -1,29 +1,45 @@
 import uuid
+from datetime import datetime
 from typing import List
 
-from sqlalchemy import Float, ForeignKey, JSON, Text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+import sqlalchemy as sa
+from sqlmodel import Field, Relationship, SQLModel
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import created_at_field, updated_at_field
 
 
-class InterviewResult(Base, TimestampMixin):
+class InterviewResult(SQLModel, table=True):
     __tablename__ = "interview_results"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=sa.Column(sa.UUID, primary_key=True),
     )
-    interview_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("interviews.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
-        index=True,
+    interview_id: uuid.UUID = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.UUID,
+            sa.ForeignKey("interviews.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+            unique=True,
+        ),
     )
-    score: Mapped[float] = mapped_column(Float, nullable=False)
-    feedback: Mapped[str] = mapped_column(Text, nullable=False)
-    strengths: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)
-    weaknesses: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)
+    score: float = Field(
+        sa_column=sa.Column(sa.Float, nullable=False)
+    )
+    feedback: str = Field(
+        sa_column=sa.Column(sa.Text, nullable=False)
+    )
+    strengths: List[str] = Field(
+        default=[],
+        sa_column=sa.Column(sa.JSON, nullable=False),
+    )
+    weaknesses: List[str] = Field(
+        default=[],
+        sa_column=sa.Column(sa.JSON, nullable=False),
+    )
+    created_at: datetime | None = created_at_field()
+    updated_at: datetime | None = updated_at_field()
 
-    interview: Mapped["Interview"] = relationship("Interview", back_populates="result")
+    interview: "Interview" = Relationship(back_populates="result")

@@ -1,12 +1,12 @@
 import enum
 import uuid
+from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Enum, ForeignKey, String
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+import sqlalchemy as sa
+from sqlmodel import Field, Relationship, SQLModel
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import created_at_field, updated_at_field
 
 
 class InterviewStatus(str, enum.Enum):
@@ -15,56 +15,80 @@ class InterviewStatus(str, enum.Enum):
     COMPLETED = "completed"
 
 
-class Interview(Base, TimestampMixin):
+class Interview(SQLModel, table=True):
     __tablename__ = "interviews"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=sa.Column(sa.UUID, primary_key=True),
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    user_id: uuid.UUID = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.UUID,
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
     )
-    resume_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("resumes.id", ondelete="SET NULL"),
-        nullable=True,
+    resume_id: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.UUID,
+            sa.ForeignKey("resumes.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
     )
-    job_description_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("job_descriptions.id", ondelete="SET NULL"),
-        nullable=True,
+    job_description_id: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.UUID,
+            sa.ForeignKey("job_descriptions.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
     )
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    status: Mapped[InterviewStatus] = mapped_column(
-        Enum(InterviewStatus, name="interview_status"),
+    title: str = Field(
+        sa_column=sa.Column(sa.String(255), nullable=False)
+    )
+    status: InterviewStatus = Field(
         default=InterviewStatus.PENDING,
-        nullable=False,
+        sa_column=sa.Column(
+            sa.Enum(
+                InterviewStatus,
+                name="interview_status",
+                create_type=False,
+            ),
+            nullable=False,
+            server_default=sa.text("'PENDING'"),
+        ),
     )
+    created_at: datetime | None = created_at_field()
+    updated_at: datetime | None = updated_at_field()
 
-    owner: Mapped["User"] = relationship("User", back_populates="interviews")
-    resume: Mapped[Optional["Resume"]] = relationship("Resume", back_populates="interviews")
-    job_description: Mapped[Optional["JobDescription"]] = relationship(
-        "JobDescription", back_populates="interviews"
+    owner: "User" = Relationship(back_populates="interviews")
+    resume: Optional["Resume"] = Relationship(back_populates="interviews")
+    job_description: Optional["JobDescription"] = Relationship(
+        back_populates="interviews"
     )
-    questions: Mapped[List["InterviewQuestion"]] = relationship(
-        "InterviewQuestion",
+    questions: List["InterviewQuestion"] = Relationship(
         back_populates="interview",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-        order_by="InterviewQuestion.order",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "lazy": "selectin",
+            "order_by": "InterviewQuestion.order",
+        },
     )
-    answers: Mapped[List["InterviewAnswer"]] = relationship(
-        "InterviewAnswer",
+    answers: List["InterviewAnswer"] = Relationship(
         back_populates="interview",
-        cascade="all, delete-orphan",
-        lazy="selectin",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "lazy": "selectin",
+        },
     )
-    result: Mapped[Optional["InterviewResult"]] = relationship(
-        "InterviewResult",
+    result: Optional["InterviewResult"] = Relationship(
         back_populates="interview",
-        uselist=False,
-        lazy="selectin",
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "uselist": False,
+        },
     )

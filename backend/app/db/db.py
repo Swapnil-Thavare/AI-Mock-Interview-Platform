@@ -1,57 +1,61 @@
-"""Database entry-point — mirrors the reference's `app.db.db` layout."""
-from contextlib import contextmanager
+"""Async SQLModel / asyncpg database session and engine."""
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import settings
+from app.core.config import get_settings
 
-engine = create_engine(
-    settings.DATABASE_URL,
+settings = get_settings()
+
+
+def _to_asyncpg_url(url: str) -> str:
+    if url.startswith("postgresql+psycopg"):
+        return url.replace("postgresql+psycopg", "postgresql+asyncpg", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
+async_engine = create_async_engine(
+    _to_asyncpg_url(settings.DATABASE_URL),
     pool_pre_ping=True,
+    future=True,
 )
 
-SessionLocal = sessionmaker(
+AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
+    async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
     autocommit=False,
     autoflush=False,
-    bind=engine,
-    class_=Session,
 )
 
 
-def get_db() -> Session:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        yield session
 
 
 class _Database:
-    """Sync SQLAlchemy wrapper that gives services the same module shape as
-    the reference's asyncpg `Database` singleton."""
+    @asynccontextmanager
+    async def session(self):
+        async with AsyncSessionLocal() as session:
+            yield session
 
-    @contextmanager
-    def session(self):
-        db = SessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    @contextmanager
-    def transaction(self):
-        db = SessionLocal()
-        try:
-            yield db
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+    @asynccontextmanager
+    async def transaction(self):
+        async with AsyncSessionLocal() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
 
 Database = _Database()
 
-__all__ = ["Database", "engine", "get_db", "SessionLocal"]
+__all__ = ["Database", "async_engine", "get_session", "AsyncSessionLocal"]

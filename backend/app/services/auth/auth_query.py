@@ -1,39 +1,42 @@
-from typing import List, Optional
 import uuid
+from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 
 
 class UserQuery:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self._db = db
 
-    def get_by_email(self, email: str) -> Optional[User]:
-        return self._db.query(User).filter(User.email == email).first()
+    async def get_by_email(self, email: str) -> Optional[User]:
+        result = await self._db.exec(select(User).where(User.email == email))
+        return result.first()
 
-    def get_by_id(self, user_id) -> Optional[User]:
+    async def get_by_id(self, user_id) -> Optional[User]:
         if isinstance(user_id, str):
             user_id = uuid.UUID(user_id)
-        return self._db.get(User, user_id)
+        return await self._db.get(User, user_id)
 
-    def get_all(self) -> List[User]:
-        return self._db.query(User).all()
+    async def get_all(self) -> List[User]:
+        result = await self._db.exec(select(User))
+        return result.all()
 
-    def create(self, obj: UserCreate, hashed_password: str) -> User:
+    async def create(self, obj: UserCreate, hashed_password: str) -> User:
         user = User(
             email=obj.email,
             full_name=obj.full_name,
             hashed_password=hashed_password,
         )
         self._db.add(user)
-        self._db.commit()
-        self._db.refresh(user)
+        await self._db.commit()
+        await self._db.refresh(user)
         return user
 
-    def update(self, user: User, update: UserUpdate) -> User:
+    async def update(self, user: User, update: UserUpdate) -> User:
         if update.full_name is not None:
             user.full_name = update.full_name
         if update.phone is not None:
@@ -44,6 +47,7 @@ class UserQuery:
             user.education = update.education
         if update.experience is not None:
             user.experience = update.experience
-        self._db.commit()
-        self._db.refresh(user)
+        self._db.add(user)
+        await self._db.commit()
+        await self._db.refresh(user)
         return user
