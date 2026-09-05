@@ -4,24 +4,53 @@ An AI-powered mock interview and candidate assessment platform designed to help 
 
 ## Overview
 
-IntelliInterview lets candidates create an account, upload a resume, provide a job description, and participate in a mock interview with personalized questions. After an interview, the platform evaluates answers and provides a performance report. This repository now has a PostgreSQL-backed backend with real JWT authentication and a React frontend connected to it.
+IntelliInterview lets candidates create an account, upload a resume, provide a job description, and participate in a mock interview with personalized questions. After an interview, the platform evaluates answers and provides a performance report. The backend is a FastAPI application backed by PostgreSQL, and the React frontend connects to it over a versioned REST API.
 
 ## Current Features
 
-- **Landing Page** — project overview and calls to action
-- **Authentication** — registration, login, logout, and protected routes with JWT
-- **Candidate Dashboard** — welcome section, dynamic stats, quick actions, recent interviews
-- **Resume Page** — PDF upload and mock analysis display
-- **Job Description Page** — create, list, and delete job descriptions with mock analysis
-- **Interview Setup** — select difficulty, type, question count, and duration
-- **Mock Interview** — question-by-question interface with progress tracking, timer, and state management
-- **Interview Result** — mock evaluation report with scores, strengths, and improvement areas
-- **Interview History** — list of previous attempts retrieved from the database
-- **Profile Page** — view and edit candidate details
-- **FastAPI Backend** — REST API with health, auth, resume, job description, and interview endpoints
-- **PostgreSQL Persistence** — SQLModel models with asyncpg and Alembic migrations
-- **JWT Security** — password hashing and access-token authentication
-- **AI Service Abstraction** — mock AI implementation ready to be replaced with a real provider
+### Authentication
+
+- Registration, login, logout, current user, and protected routes with JWT
+- Password hashing with pwdlib / bcrypt
+
+### Resume Management
+
+- Real PDF upload with multipart form data
+- File type and size validation (10 MB max)
+- PDF text extraction using `pypdf`
+- AI resume analysis via Google Gemini
+- Structured storage of extracted text and analysis
+- Resume list and latest-resume retrieval
+
+### Job Description Management
+
+- Create, list, and delete job descriptions
+- AI JD analysis via Google Gemini
+- Structured extraction of required/preferred skills, technologies, responsibilities, experience, education, and keywords
+
+### Resume ↔ Job Description Matching
+
+- AI-powered compatibility analysis
+- Overall match score (0–100) with validation
+- Matched skills, missing skills, strengths, gaps, and recommendations
+- Persisted per user/resume/JD combination
+
+### Interview Lifecycle
+
+- Interview setup with resume, JD, difficulty, question count, duration, and question types
+- Ownership validation on resume and JD
+- AI-generated personalized questions using structured Gemini outputs
+- Question-by-question interview interface with progress, timer, and state management
+- Answer submission and interview completion
+- Interview history and result reporting
+
+### AI Provider
+
+- Google Gemini integration using the `google-genai` SDK
+- Centralized `AIService` abstraction with a `GeminiProvider` implementation
+- Structured Pydantic outputs for resume analysis, JD analysis, match analysis, and interview questions
+- Configurable model and timeout via environment variables
+- Application-level error handling for AI failures, missing keys, timeouts, and invalid outputs
 
 ## Tech Stack
 
@@ -46,17 +75,13 @@ IntelliInterview lets candidates create an account, upload a resume, provide a j
 - asyncpg (PostgreSQL driver)
 - PyJWT
 - pwdlib (password hashing)
+- google-genai (Gemini SDK)
+- pypdf (PDF text extraction)
 - pytest / pytest-asyncio
 
 ### Database
 
 - PostgreSQL
-
-### AI (Planned)
-
-- Google Gemini API
-- Sentence Transformers
-- RAG / vector search where required
 
 ## Project Structure
 
@@ -97,7 +122,6 @@ AI-Mock-Interview-Platform/
         ├── index.css
         ├── contexts/              # AuthContext
         ├── types/
-        ├── utils/mockData.ts
         ├── services/              # API service layer
         ├── components/            # reusable UI and auth components
         ├── layouts/               # dashboard and auth layouts
@@ -114,7 +138,7 @@ cd /path/to/AI-Mock-Interview-Platform
 
 ### 2. PostgreSQL setup
 
-Create a PostgreSQL database and user. For example:
+Create PostgreSQL databases for development and testing:
 
 ```sql
 CREATE DATABASE intelliinterview;
@@ -123,7 +147,7 @@ CREATE DATABASE intelliinterview_test;
 
 ### 3. Backend setup
 
-Create and activate a Python virtual environment, then install dependencies.
+Create and activate a Python virtual environment, then install dependencies:
 
 ```bash
 cd backend
@@ -146,8 +170,13 @@ DATABASE_URL_TEST=postgresql+asyncpg://username:password@localhost:5432/intellii
 JWT_SECRET_KEY=your-secret-key
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
-CORS_ORIGINS=http://localhost:5173
+CORS_ORIGINS=http://localhost:8080
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-3.6-flash
 ```
+
+> Never commit real API keys or secrets. Keep `GEMINI_API_KEY` in `backend/.env` only.
 
 Run Alembic migrations to bring the schema to the latest version:
 
@@ -163,22 +192,13 @@ uvicorn app.main:app --reload
 
 The API will be available at `http://localhost:8000`.
 
-Example health check:
+Health check:
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-Expected response:
-
-```json
-{
-  "status": "ok",
-  "service": "IntelliInterview API"
-}
-```
-
-Run the backend tests:
+Run backend tests:
 
 ```bash
 pytest
@@ -186,7 +206,7 @@ pytest
 
 ### 4. Frontend setup
 
-In a separate terminal, install dependencies and run the Vite dev server.
+In a separate terminal, install dependencies and run the Vite dev server:
 
 ```bash
 cd ../frontend
@@ -195,20 +215,86 @@ npm install
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:5173` by default.
+The frontend will be available at `http://localhost:8080` by default. Make sure `CORS_ORIGINS` in `backend/.env` includes this origin.
 
 ### 5. Basic user flow
 
 1. Open the landing page at `/`
 2. Navigate to `/login` or `/register`
 3. Go to `/dashboard`
-4. Upload a resume at `/resume`
+4. Upload a real text-based PDF resume at `/resume`
 5. Add a job description at `/job-description`
-6. Configure an interview at `/interview/setup`
-7. Start the interview at `/interview`
-8. Answer or skip questions, then end the interview
-9. View the report at `/interview/result`
-10. View history at `/interviews`
+6. Use the match panel on the job-description page to compare a resume with a JD
+7. Configure an interview at `/interview/setup` by selecting the resume and JD
+8. Start the interview at `/interview`
+9. Answer or skip questions, then end the interview
+10. View the report at `/interview/result`
+11. View history at `/interviews`
+
+## AI Features
+
+### Resume AI Analysis
+
+When a PDF is uploaded, the backend extracts its text and asks Gemini to produce a structured analysis:
+
+- Professional summary
+- Technical skills, soft skills, programming languages, frameworks, and tools
+- Education, experience, projects, and certifications
+- Strengths and areas for improvement
+
+The result is validated against a Pydantic schema, stored in the database, and returned to the frontend. Resume analysis is performed on upload and is not regenerated on every page load.
+
+### Job Description AI Analysis
+
+When a JD is created, Gemini extracts:
+
+- Job title
+- Required and preferred skills
+- Technologies
+- Responsibilities
+- Experience and education requirements
+- Important keywords
+
+The analysis is validated, persisted, and displayed on the job-description page.
+
+### Resume ↔ JD Matching
+
+The match endpoint sends the stored resume analysis and JD analysis to Gemini and returns:
+
+- Overall match score (0–100), validated to remain in range
+- Matched skills, missing skills
+- Strengths relative to the role
+- Gaps to address
+- Actionable recommendations
+
+Match results are stored per user/resume/JD to avoid duplicate analysis.
+
+### AI Interview Question Generation
+
+When an interview is created, the backend sends the resume analysis, JD analysis, and interview configuration to Gemini and receives a structured list of questions. Each question includes:
+
+- Question text
+- Question type (`technical`, `behavioral`, `situational`, `HR`)
+- Difficulty (`easy`, `medium`, `hard`)
+- Topic and expected focus
+
+Questions are personalized based on the candidate's background and the JD, then persisted as `interview_questions` rows.
+
+## Error Handling
+
+- Missing or invalid Gemini API key returns `503 Service Unavailable` with a generic message
+- Gemini timeouts return `504 Gateway Timeout`
+- Invalid or unparseable model outputs return `502 Bad Gateway`
+- Empty or non-extractable PDFs return `422 Unprocessable Entity`
+- Unsupported file types return `400 Bad Request`
+- API keys and stack traces are never exposed to the frontend
+
+## PDF Limitations
+
+- Only text-based PDFs are supported in this phase
+- Scanned image resumes without a text layer are rejected with a clear message
+- Maximum upload size is 10 MB
+- Only `.pdf` files are accepted
 
 ## Database Migrations
 
@@ -232,25 +318,57 @@ alembic revision --autogenerate -m "describe change"
 Review the generated migration
    |
    v
+Rename the generated script to the next sequential number, e.g. `0002_...
+   |
+   v
 alembic upgrade head
 ```
 
+## Testing
+
+Backend tests use a dedicated test database (`DATABASE_URL_TEST`) and a deterministic fake Gemini provider so no real network calls are required.
+
+Run the test suite:
+
+```bash
+cd backend
+pytest
+```
+
+Frontend build verification:
+
+```bash
+cd frontend
+npm run build
+```
+
+## Verification Checklist
+
+Backend:
+
+- `python -m compileall app`
+- `alembic history`
+- `alembic current`
+- `alembic upgrade head`
+- `pytest`
+
+Frontend:
+
+- `npm run build`
+
 ## Current Status
 
-The application now uses a real PostgreSQL database for persistence and JWT-based authentication. The frontend is connected to the backend API for user data, resumes, job descriptions, interviews, and results. AI logic is still mocked through `AIService` and `EvaluationService` and will be replaced with a real AI provider in a later phase.
+Phase 4 is implemented. The platform is now genuinely AI-powered with Google Gemini for resume analysis, JD analysis, resume-JD matching, and personalized interview question generation. The production flow no longer depends on mock AI data, although a `mockData.ts` file is retained for isolated UI development.
 
 ## Future Scope
 
-- Google Gemini integration
-- Resume AI analysis
-- Job description AI analysis
-- Resume–JD matching
-- AI-generated personalized interview questions
-- Adaptive mock interviews
 - AI answer evaluation and feedback
+- Adaptive mock interviews
 - Performance analytics and improvement tracking
 - Voice interviews
+- Speech-to-text / text-to-speech
 - Coding interviews
+- RAG and vector search
 
 ## License
 

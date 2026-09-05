@@ -37,3 +37,7 @@ Review generated migration
    v
 alembic upgrade head
 ```
+
+## Migration file naming
+
+After generating a migration with `alembic revision --autogenerate`, the generated script in `backend/alembic/versions/` must be renamed to use the next sequential number in the project's existing `000N_<slug>.py` convention (e.g. `0001_initial_schema.py` → `0002_add_ai_analysis_fields.py`). The Alembic `revision` and `down_revision` identifiers inside the file must remain unchanged; only the filename is updated to keep migrations sorted and readable.
