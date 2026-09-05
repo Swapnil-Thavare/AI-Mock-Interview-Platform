@@ -10,11 +10,17 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     PROJECT_NAME: str = "IntelliInterview API"
-    CORS_ORIGINS: str = "http://localhost:5173"
+    CORS_ORIGINS: str = "http://localhost:8080"
     DATABASE_URL: str = ""
     JWT_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # AI Provider
+    AI_PROVIDER: str = "gemini"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-3.6-flash"
+    GEMINI_TIMEOUT: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

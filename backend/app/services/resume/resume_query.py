@@ -25,11 +25,15 @@ class ResumeQuery:
             file_path=file_path,
             extracted_text=obj.extracted_text or "",
             skills=obj.skills or [],
+            analysis=obj.analysis or {},
         )
         self._db.add(resume)
         await self._db.commit()
         await self._db.refresh(resume)
         return resume
+
+    async def get_by_id(self, resume_id: uuid.UUID) -> Optional[ResumeModel]:
+        return await self._db.get(ResumeModel, resume_id)
 
     async def get_all(self, user_id: uuid.UUID) -> List[ResumeModel]:
         result = await self._db.exec(

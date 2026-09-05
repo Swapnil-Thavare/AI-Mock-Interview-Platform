@@ -45,9 +45,25 @@ class InterviewQuestion(SQLModel, table=True):
             server_default=sa.text("'TECHNICAL'"),
         ),
     )
+    difficulty: str = Field(
+        default="medium",
+        sa_column=sa.Column(
+            sa.String(20),
+            nullable=False,
+            server_default=sa.text("'medium'"),
+        ),
+    )
     order: int = Field(
         default=0,
         sa_column=sa.Column(sa.Integer, nullable=False),
+    )
+    topic: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.String(255), nullable=True),
+    )
+    expected_focus: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.Text, nullable=True),
     )
     category: Optional[str] = Field(
         default=None,

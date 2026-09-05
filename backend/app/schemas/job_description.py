@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -9,6 +9,7 @@ class JobDescriptionBase(BaseModel):
     company: Optional[str] = None
     description: str
     required_skills: List[str] = []
+    analysis: Dict[str, Any] = {}
 
 
 class JobDescriptionCreate(JobDescriptionBase):

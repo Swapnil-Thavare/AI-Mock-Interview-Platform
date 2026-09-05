@@ -50,6 +50,26 @@ class Interview(SQLModel, table=True):
     title: str = Field(
         sa_column=sa.Column(sa.String(255), nullable=False)
     )
+    difficulty: str = Field(
+        default="medium",
+        sa_column=sa.Column(
+            sa.String(20),
+            nullable=False,
+            server_default=sa.text("'medium'"),
+        ),
+    )
+    question_count: int = Field(
+        default=5,
+        sa_column=sa.Column(sa.Integer, nullable=False),
+    )
+    duration: int = Field(
+        default=30,
+        sa_column=sa.Column(sa.Integer, nullable=False),
+    )
+    question_types: List[str] = Field(
+        default=[],
+        sa_column=sa.Column(sa.JSON, nullable=False),
+    )
     status: InterviewStatus = Field(
         default=InterviewStatus.PENDING,
         sa_column=sa.Column(

@@ -6,15 +6,17 @@ import type {
   Answer,
   InterviewResult,
 } from '@/types';
-import { mockQuestions } from '@/utils/mockData';
 
 const normalizeQuestion = (data: Record<string, unknown>): Question => ({
-  id: String(data.id ?? 0),
+  id: String(data.id ?? ''),
   text: (data.question_text as string) ?? (data.text as string) ?? '',
   question_text: (data.question_text as string) ?? (data.text as string) ?? '',
-  category: (data.category === 'behavioral' ? 'behavioral' : 'technical') as 'technical' | 'behavioral',
-  difficulty: 'medium',
-  expectedAnswer: (data.expected_answer as string) ?? undefined,
+  category: (data.question_type as string) ?? (data.category as string) ?? 'technical',
+  question_type: (data.question_type as string) ?? (data.category as string) ?? 'technical',
+  difficulty: ((data.difficulty as string) ?? 'medium') as 'easy' | 'medium' | 'hard',
+  topic: (data.topic as string) ?? undefined,
+  expected_focus: (data.expected_focus as string) ?? undefined,
+  expectedAnswer: (data.expected_focus as string) ?? undefined,
 });
 
 const normalizeResult = (data: Record<string, unknown>): InterviewResult => {
@@ -42,20 +44,26 @@ const normalizeResult = (data: Record<string, unknown>): InterviewResult => {
   };
 };
 
-const defaultSetup: InterviewSetup = {
-  difficulty: 'medium',
-  questionCount: 2,
-  type: 'mixed',
-  duration: 30,
+const normalizeSetup = (data: Record<string, unknown>, setup?: InterviewSetup): InterviewSetup => {
+  if (setup) return setup;
+  return {
+    resumeId: data.resume_id ? String(data.resume_id) : '',
+    jobDescriptionId: data.job_description_id ? String(data.job_description_id) : '',
+    difficulty: ((data.difficulty as string) ?? 'medium') as 'easy' | 'medium' | 'hard',
+    questionCount: (data.question_count as number) ?? 5,
+    type: 'mixed',
+    duration: (data.duration as number) ?? 30,
+  };
 };
 
 const normalizeInterview = (data: Record<string, unknown>, setup?: InterviewSetup): Interview => ({
-  id: String(data.id ?? 0),
+  id: String(data.id ?? ''),
+  user_id: data.user_id ? String(data.user_id) : undefined,
   userId: data.user_id ? String(data.user_id) : undefined,
-  setup: (data.setup as InterviewSetup) ?? setup ?? defaultSetup,
+  setup: normalizeSetup(data, setup),
   title: (data.title as string) ?? 'Mock Interview',
   status: (data.status as string) ?? 'in-progress',
-  startedAt: (data.started_at as string) ?? (data.startedAt as string) ?? new Date().toISOString(),
+  startedAt: (data.created_at as string) ?? (data.createdAt as string) ?? new Date().toISOString(),
   completedAt: (data.completed_at as string) ?? (data.completedAt as string) ?? undefined,
   questions: Array.isArray(data.questions)
     ? (data.questions as Record<string, unknown>[]).map(normalizeQuestion)
@@ -64,22 +72,33 @@ const normalizeInterview = (data: Record<string, unknown>, setup?: InterviewSetu
   result: data.result ? normalizeResult(data.result as Record<string, unknown>) : undefined,
 });
 
+const questionTypesFromSetup = (setup: InterviewSetup): string[] => {
+  if (setup.question_types && setup.question_types.length) return setup.question_types;
+  if (setup.type === 'technical') return ['technical'];
+  if (setup.type === 'behavioral') return ['behavioral'];
+  return ['technical', 'behavioral'];
+};
+
 export const interviewService = {
   create: async (setup: InterviewSetup): Promise<Interview> => {
-    const { data } = await api.post('/interviews', { ...setup, title: 'Mock Interview' });
-    const interview = normalizeInterview(data, setup);
-    if (!interview.questions.length) {
-      interview.questions = mockQuestions.map((q) => ({ ...q, id: String(q.id) }));
-    }
-    return interview;
+    const { data } = await api.post('/interviews', {
+      title: 'Mock Interview',
+      resume_id: setup.resumeId,
+      job_description_id: setup.jobDescriptionId,
+      difficulty: setup.difficulty,
+      question_count: setup.questionCount,
+      duration: setup.duration,
+      question_types: questionTypesFromSetup(setup),
+    });
+    return normalizeInterview(data as Record<string, unknown>, setup);
   },
 
-  getById: async (id: string | number): Promise<Interview> => {
+  getById: async (id: string): Promise<Interview> => {
     const { data } = await api.get(`/interviews/${id}`);
-    return normalizeInterview(data);
+    return normalizeInterview(data as Record<string, unknown>);
   },
 
-  getQuestions: async (interviewId: string | number): Promise<Question[]> => {
+  getQuestions: async (interviewId: string): Promise<Question[]> => {
     const { data } = await api.get(`/interviews/${interviewId}`);
     return Array.isArray(data.questions)
       ? (data.questions as Record<string, unknown>[]).map(normalizeQuestion)
@@ -87,22 +106,22 @@ export const interviewService = {
   },
 
   submitAnswer: async (
-    interviewId: string | number,
-    _questionId: string | number,
+    interviewId: string,
+    _questionId: string,
     answer: Answer
   ): Promise<void> => {
     await api.post(`/interviews/${interviewId}/answers`, {
-      question_id: Number(answer.questionId),
+      question_id: answer.questionId,
       answer_text: answer.skipped ? '' : answer.text,
     });
   },
 
-  complete: async (interviewId: string | number): Promise<InterviewResult> => {
+  complete: async (interviewId: string): Promise<InterviewResult> => {
     const { data } = await api.post(`/interviews/${interviewId}/complete`);
-    return normalizeResult(data);
+    return normalizeResult(data as Record<string, unknown>);
   },
 
-  end: async (interviewId: string | number): Promise<InterviewResult> => {
+  end: async (interviewId: string): Promise<InterviewResult> => {
     return interviewService.complete(interviewId);
   },
 

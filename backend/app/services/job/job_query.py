@@ -21,6 +21,7 @@ class JobDescriptionQuery:
             company=obj.company,
             description=obj.description,
             required_skills=obj.required_skills or [],
+            analysis=obj.analysis or {},
         )
         self._db.add(job)
         await self._db.commit()

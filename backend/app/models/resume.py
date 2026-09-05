@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import sqlalchemy as sa
 from sqlmodel import Field, Relationship, SQLModel
@@ -42,6 +42,10 @@ class Resume(SQLModel, table=True):
     extracted_text: str = Field(
         default="",
         sa_column=sa.Column(sa.Text, nullable=False),
+    )
+    analysis: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=sa.Column(sa.JSON, nullable=False),
     )
     created_at: datetime | None = created_at_field()
     updated_at: datetime | None = updated_at_field()

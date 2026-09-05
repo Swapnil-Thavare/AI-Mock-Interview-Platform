@@ -7,6 +7,7 @@ from .interview_question import InterviewQuestion, QuestionType
 from .interview_result import InterviewResult
 from .job_description import JobDescription
 from .resume import Resume
+from .resume_job_match import ResumeJobMatch
 from .user import User
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "User",
     "Resume",
     "JobDescription",
+    "ResumeJobMatch",
     "Interview",
     "InterviewStatus",
     "InterviewQuestion",

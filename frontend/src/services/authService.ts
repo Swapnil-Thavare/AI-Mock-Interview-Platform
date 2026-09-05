@@ -13,7 +13,7 @@ export interface RegisterInput {
 }
 
 const normalizeUser = (data: Record<string, unknown>): User => ({
-  id: (data.id as string | number) ?? '',
+  id: String(data.id ?? ''),
   email: (data.email as string) ?? '',
   name: (data.name as string) ?? (data.full_name as string) ?? '',
   full_name: (data.full_name as string) ?? (data.name as string) ?? '',
@@ -57,7 +57,7 @@ export const authService = {
       password: input.password,
     });
 
-    const id = (data.user_id as string | number) ?? (data.id as string | number) ?? '';
+    const id = String(data.user_id ?? data.id ?? '');
 
     // The real backend only returns a message and user_id. Log in to get a token.
     const loginRes = await authService.login({ email: input.email, password: input.password });

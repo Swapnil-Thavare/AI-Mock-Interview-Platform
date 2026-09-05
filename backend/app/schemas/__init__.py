@@ -12,6 +12,7 @@ from .job_description import (
     JobDescriptionCreate,
     JobDescriptionResponse,
 )
+from .match import ResumeJDMatchCreate, ResumeJDMatchResponse
 from .resume import Resume, ResumeCreate, ResumeResponse
 from .user import Token, UserCreate, UserLogin, UserResponse, UserUpdate
 
@@ -27,6 +28,8 @@ __all__ = [
     "JobDescription",
     "JobDescriptionCreate",
     "JobDescriptionResponse",
+    "ResumeJDMatchCreate",
+    "ResumeJDMatchResponse",
     "Interview",
     "InterviewCreate",
     "InterviewQuestion",

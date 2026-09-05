@@ -13,3 +13,5 @@ httpx
 python-dotenv
 pyjwt
 pwdlib[bcrypt]
+google-genai
+pypdf

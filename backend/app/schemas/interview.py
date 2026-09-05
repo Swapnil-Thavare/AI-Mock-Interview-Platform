@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -18,10 +18,14 @@ class QuestionType(str, Enum):
 
 
 class InterviewQuestion(BaseModel):
-    id: Optional[int] = None
+    id: Optional[UUID] = None
+    interview_id: Optional[UUID] = None
     question_text: str
     category: Optional[str] = None
     question_type: QuestionType = QuestionType.TECHNICAL
+    difficulty: str = "medium"
+    topic: Optional[str] = None
+    expected_focus: Optional[str] = None
     order: int = 0
     model_config = ConfigDict(from_attributes=True)
 
@@ -71,9 +75,13 @@ class InterviewResultResponse(InterviewResult):
 
 
 class InterviewCreate(BaseModel):
-    title: str
+    title: str = "Untitled Interview"
     resume_id: Optional[UUID] = None
     job_description_id: Optional[UUID] = None
+    difficulty: str = "medium"
+    question_count: int = 5
+    duration: int = 30
+    question_types: List[str] = ["technical", "behavioral"]
 
 
 class InterviewResponse(BaseModel):
@@ -82,6 +90,10 @@ class InterviewResponse(BaseModel):
     title: str
     resume_id: Optional[UUID] = None
     job_description_id: Optional[UUID] = None
+    difficulty: str
+    question_count: int
+    duration: int
+    question_types: List[str] = []
     status: InterviewStatus
     questions: List[InterviewQuestionResponse] = []
     answers: List[InterviewAnswerResponse] = []

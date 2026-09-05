@@ -1,3 +1,6 @@
+import uuid
+from typing import List
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -10,7 +13,7 @@ from app.services.resume.resume_service import Resume
 router = APIRouter()
 
 
-@router.post("/upload")
+@router.post("/upload", response_model=ResumeResponse)
 async def upload_resume(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_session),
@@ -19,8 +22,8 @@ async def upload_resume(
     return await Resume(db).create_resume(current_user.id, file)
 
 
-@router.get("", response_model=ResumeResponse)
-async def get_resume(
+@router.get("/latest", response_model=ResumeResponse)
+async def get_latest_resume(
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -28,3 +31,20 @@ async def get_resume(
     if not resume:
         raise HTTPException(status_code=404, detail="No resume found")
     return resume
+
+
+@router.get("", response_model=List[ResumeResponse])
+async def list_resumes(
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Resume(db).get_all(current_user.id)
+
+
+@router.get("/{resume_id}", response_model=ResumeResponse)
+async def get_resume(
+    resume_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Resume(db).get_by_id(current_user.id, resume_id)

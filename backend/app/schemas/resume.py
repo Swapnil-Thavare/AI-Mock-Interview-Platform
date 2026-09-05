@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -9,6 +9,7 @@ class ResumeBase(BaseModel):
     file_size: Optional[int] = None
     skills: List[str] = []
     extracted_text: Optional[str] = None
+    analysis: Dict[str, Any] = {}
 
 
 class ResumeCreate(ResumeBase):

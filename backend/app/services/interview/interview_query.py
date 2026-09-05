@@ -29,6 +29,10 @@ class InterviewQuery:
             resume_id=obj.resume_id,
             job_description_id=obj.job_description_id,
             title=obj.title,
+            difficulty=obj.difficulty,
+            question_count=obj.question_count,
+            duration=obj.duration,
+            question_types=obj.question_types or ["technical"],
         )
         self._db.add(interview)
         await self._db.commit()

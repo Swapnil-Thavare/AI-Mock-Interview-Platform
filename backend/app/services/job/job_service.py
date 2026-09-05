@@ -8,17 +8,27 @@ from app.schemas.job_description import (
     JobDescriptionCreate,
     JobDescriptionResponse,
 )
+from app.services.ai.ai_service import AIService
 from app.services.job.job_query import JobDescriptionQuery
 
 
 class JobDescription:
     def __init__(self, db: AsyncSession):
         self._query = JobDescriptionQuery(db)
+        self._ai = AIService()
 
     async def create(
         self, user_id: uuid.UUID, job: JobDescriptionCreate
     ) -> JobDescriptionResponse:
-        db_job = await self._query.create(job, user_id)
+        analysis = await self._ai.analyze_job_description(job.description)
+        create = JobDescriptionCreate(
+            title=analysis.job_title or job.title,
+            company=job.company,
+            description=job.description,
+            required_skills=job.required_skills or analysis.required_skills,
+            analysis=analysis.model_dump(),
+        )
+        db_job = await self._query.create(create, user_id)
         return JobDescriptionResponse.model_validate(db_job)
 
     async def get_all(
