@@ -85,6 +85,7 @@ export const authService = {
   logout: (): void => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('currentInterviewId');
   },
 
   updateMe: async (updates: Partial<User>): Promise<User> => {

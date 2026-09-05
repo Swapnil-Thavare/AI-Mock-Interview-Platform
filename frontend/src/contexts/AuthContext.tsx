@@ -36,6 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    let ignore = false;
     const init = async () => {
       let current = storedUser();
       try {
@@ -44,11 +45,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {
         /* keep stored user if /auth/me is not available */
       }
+      if (ignore) return;
       setUser(current);
       setLoading(false);
     };
 
     init();
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const persist = (token: string, next: User) => {

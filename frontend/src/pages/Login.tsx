@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/Button';
 export const Login: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [email, setEmail] = useState('aarav@example.com');
-  const [password, setPassword] = useState('password');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -44,6 +44,8 @@ export const Login: React.FC = () => {
         <Input
           label="Email"
           type="email"
+          name="email"
+          autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -51,6 +53,8 @@ export const Login: React.FC = () => {
         <Input
           label="Password"
           type="password"
+          name="password"
+          autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
