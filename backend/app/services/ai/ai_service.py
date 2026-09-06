@@ -9,7 +9,10 @@ from typing import Any, Dict, List
 
 from app.services.ai.gemini_provider import GeminiProvider
 from app.services.ai.schemas import (
+    AnswerEvaluationOutput,
+    FollowUpQuestionOutput,
     InterviewQuestionsOutput,
+    InterviewReportOutput,
     JobDescriptionAnalysisOutput,
     ResumeAnalysisOutput,
     ResumeJDMatchOutput,
@@ -78,6 +81,86 @@ Configuration:
 - question types: {question_types}
 """
 
+_ANSWER_EVAL_PROMPT = """You are an expert technical interviewer evaluating a candidate's answer.
+Evaluate ONLY the supplied question and answer. Use the resume and job description as context, but do not invent candidate experience.
+Rules:
+- Distinguish between incorrect, incomplete, and acceptable answers.
+- If the candidate says "I don't know" or the answer is empty, evaluate honestly with low scores and explain what was missing.
+- Avoid judging protected personal characteristics or making unsupported hiring decisions.
+- Use cautious language such as "Based on the submitted answer..." and "Additional evidence may be needed...".
+- If you cannot confidently evaluate the answer, set confidence below 50 and explain in uncertainty_notes.
+- Return structured JSON only.
+
+Interview difficulty: {difficulty}
+
+Question:
+{question}
+
+Expected focus:
+{expected_focus}
+
+Candidate answer:
+{answer}
+
+Resume analysis:
+{resume}
+
+Job description analysis:
+{jd}
+"""
+
+_FOLLOW_UP_PROMPT = """You are an expert technical interviewer generating ONE adaptive follow-up question.
+Rules:
+- The follow-up must be relevant to the previous question and the candidate's answer.
+- Do not repeat the previous question.
+- Ground the follow-up in the resume and job description context.
+- Match the selected difficulty level.
+- Target a specific gap, missing point, or unclear area from the evaluation.
+- Return structured JSON only.
+
+Previous question:
+{question}
+
+Candidate answer:
+{answer}
+
+Evaluation notes:
+{evaluation}
+
+Resume analysis:
+{resume}
+
+Job description analysis:
+{jd}
+
+Difficulty: {difficulty}
+"""
+
+_FINAL_REPORT_PROMPT = """You are an expert technical interviewer creating a final interview report.
+Use the interview configuration, resume analysis, job description analysis, and all question/answer/evaluation data below.
+Rules:
+- Do not invent scores when insufficient data exists; return null for dimensions that cannot be reliably evaluated.
+- Do not make unsupported hiring decisions or claims about protected characteristics.
+- Use cautious, evidence-based language such as "Based on the submitted answers..." and "Additional evidence may be needed...".
+- Include uncertainty notes when the report cannot be fully supported.
+- Return structured JSON only.
+
+Interview configuration:
+{config}
+
+Resume analysis:
+{resume}
+
+Job description analysis:
+{jd}
+
+Resume/JD match:
+{match}
+
+Questions, answers, and evaluations:
+{qa}
+"""
+
 
 class AIProviderInterface:
     """Minimal protocol the AI service depends on."""
@@ -126,3 +209,57 @@ class AIService:
         )
         output = await self._provider.complete_json(prompt, InterviewQuestionsOutput)
         return [q.model_dump() for q in output.questions]
+
+    async def evaluate_answer(
+        self,
+        question: Dict[str, Any],
+        answer_text: str,
+        resume_analysis: Dict[str, Any],
+        jd_analysis: Dict[str, Any],
+        difficulty: str,
+    ) -> AnswerEvaluationOutput:
+        prompt = _ANSWER_EVAL_PROMPT.format(
+            difficulty=difficulty,
+            question=question.get("question_text", ""),
+            expected_focus=question.get("expected_focus", ""),
+            answer=answer_text[:20000],
+            resume=json.dumps(resume_analysis or {}, ensure_ascii=False, indent=2),
+            jd=json.dumps(jd_analysis or {}, ensure_ascii=False, indent=2),
+        )
+        return await self._provider.complete_json(prompt, AnswerEvaluationOutput)
+
+    async def generate_follow_up_question(
+        self,
+        question: Dict[str, Any],
+        answer_text: str,
+        evaluation: Dict[str, Any],
+        resume_analysis: Dict[str, Any],
+        jd_analysis: Dict[str, Any],
+        difficulty: str,
+    ) -> FollowUpQuestionOutput:
+        prompt = _FOLLOW_UP_PROMPT.format(
+            question=question.get("question_text", ""),
+            answer=answer_text[:20000],
+            evaluation=json.dumps(evaluation, ensure_ascii=False, indent=2),
+            resume=json.dumps(resume_analysis or {}, ensure_ascii=False, indent=2),
+            jd=json.dumps(jd_analysis or {}, ensure_ascii=False, indent=2),
+            difficulty=difficulty,
+        )
+        return await self._provider.complete_json(prompt, FollowUpQuestionOutput)
+
+    async def generate_interview_report(
+        self,
+        config: Dict[str, Any],
+        resume_analysis: Dict[str, Any],
+        jd_analysis: Dict[str, Any],
+        match: Dict[str, Any],
+        qa_data: List[Dict[str, Any]],
+    ) -> InterviewReportOutput:
+        prompt = _FINAL_REPORT_PROMPT.format(
+            config=json.dumps(config, ensure_ascii=False, indent=2),
+            resume=json.dumps(resume_analysis or {}, ensure_ascii=False, indent=2),
+            jd=json.dumps(jd_analysis or {}, ensure_ascii=False, indent=2),
+            match=json.dumps(match or {}, ensure_ascii=False, indent=2),
+            qa=json.dumps(qa_data, ensure_ascii=False, indent=2),
+        )
+        return await self._provider.complete_json(prompt, InterviewReportOutput)

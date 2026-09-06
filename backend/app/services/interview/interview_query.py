@@ -6,6 +6,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.interview import Interview
+from app.models.interview_answer import InterviewAnswer
+from app.models.interview_question import InterviewQuestion
 from app.schemas.interview import InterviewCreate
 
 
@@ -60,3 +62,25 @@ class InterviewQuery:
         await self._db.commit()
         await self._db.refresh(interview)
         return interview
+
+    async def get_question_by_id(
+        self, question_id: uuid.UUID
+    ) -> Optional[InterviewQuestion]:
+        if isinstance(question_id, str):
+            question_id = uuid.UUID(question_id)
+        stmt = select(InterviewQuestion).where(InterviewQuestion.id == question_id)
+        result = await self._db.exec(stmt)
+        return result.first()
+
+    async def get_answer_for_question(
+        self, interview_id: uuid.UUID, question_id: uuid.UUID
+    ) -> Optional[InterviewAnswer]:
+        stmt = (
+            select(InterviewAnswer)
+            .where(
+                InterviewAnswer.interview_id == interview_id,
+                InterviewAnswer.question_id == question_id,
+            )
+        )
+        result = await self._db.exec(stmt)
+        return result.first()

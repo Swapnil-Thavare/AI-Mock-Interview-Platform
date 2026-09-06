@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import sqlalchemy as sa
 from sqlmodel import Field, Relationship, SQLModel
@@ -39,6 +39,18 @@ class InterviewAnswer(SQLModel, table=True):
     )
     answer_text: str = Field(
         sa_column=sa.Column(sa.Text, nullable=False)
+    )
+    score: Optional[float] = Field(
+        default=None,
+        sa_column=sa.Column(sa.Float, nullable=True),
+    )
+    evaluation: Optional[dict] = Field(
+        default=None,
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
+    evaluated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True),
     )
     created_at: datetime | None = created_at_field()
     updated_at: datetime | None = updated_at_field()

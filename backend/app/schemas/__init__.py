@@ -1,11 +1,13 @@
 from .interview import (
     Interview,
     InterviewAnswer,
+    InterviewAnswerEvaluation,
     InterviewCreate,
     InterviewQuestion,
     InterviewResponse,
     InterviewResult,
     InterviewResultResponse,
+    SubmitAnswerResponse,
 )
 from .job_description import (
     JobDescription,
@@ -34,7 +36,9 @@ __all__ = [
     "InterviewCreate",
     "InterviewQuestion",
     "InterviewAnswer",
+    "InterviewAnswerEvaluation",
     "InterviewResponse",
     "InterviewResult",
     "InterviewResultResponse",
+    "SubmitAnswerResponse",
 ]

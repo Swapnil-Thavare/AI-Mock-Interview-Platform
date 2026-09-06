@@ -159,6 +159,58 @@ def mock_gemini(monkeypatch):
                         )
                     ]
                 )
+            if name == "AnswerEvaluationOutput":
+                return ai_schemas.AnswerEvaluationOutput(
+                    score=75,
+                    relevance_score=80,
+                    correctness_score=70,
+                    clarity_score=75,
+                    depth_score=70,
+                    strengths=["Clear explanation"],
+                    weaknesses=["Could include more detail"],
+                    missing_points=["Middleware"],
+                    improvement_feedback="Add more detail about middleware and async handling.",
+                    ideal_answer_summary="A strong answer describes FastAPI as a modern Python web framework with async support.",
+                    follow_up_required=False,
+                    follow_up_reason="Answer is acceptable for the difficulty.",
+                    confidence=85,
+                    uncertainty_notes="",
+                )
+            if name == "FollowUpQuestionOutput":
+                return ai_schemas.FollowUpQuestionOutput(
+                    question="Can you explain how FastAPI handles dependency injection?",
+                    question_type="technical",
+                    difficulty="medium",
+                    topic="FastAPI",
+                    expected_focus="Understanding of Depends and DI",
+                )
+            if name == "InterviewReportOutput":
+                return ai_schemas.InterviewReportOutput(
+                    overall_score=78,
+                    technical_score=75,
+                    communication_score=80,
+                    relevance_score=85,
+                    problem_solving_score=70,
+                    resume_alignment="The candidate's resume aligns well with the backend role.",
+                    strengths=["Good communication"],
+                    weaknesses=["Some technical depth missing"],
+                    missing_or_weak_skills=["Kubernetes"],
+                    recommended_preparation_topics=["System design", "Kubernetes"],
+                    answer_quality_summary="Answers were generally clear and relevant.",
+                    interview_completion_summary="Interview completed with one question answered.",
+                    overall_feedback="Solid performance with room for deeper technical depth.",
+                    confidence=80,
+                    uncertainty_notes="",
+                    question_wise_summary=[
+                        ai_schemas.QuestionResultSummary(
+                            question_id="",
+                            question="What is FastAPI?",
+                            answer_summary="Candidate explained FastAPI clearly.",
+                            score=75,
+                            feedback="Good but could be more detailed.",
+                        )
+                    ],
+                )
             return response_schema()
 
     monkeypatch.setattr(

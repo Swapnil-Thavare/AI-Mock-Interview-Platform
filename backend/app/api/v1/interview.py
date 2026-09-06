@@ -12,6 +12,7 @@ from app.schemas import (
     InterviewCreate,
     InterviewResponse,
     InterviewResultResponse,
+    SubmitAnswerResponse,
 )
 from app.services.interview.interview_service import Interview
 
@@ -46,7 +47,7 @@ async def get_interview(
     )
 
 
-@router.post("/{interview_id}/answers")
+@router.post("/{interview_id}/answers", response_model=SubmitAnswerResponse)
 async def submit_answer(
     interview_id: uuid.UUID,
     answer: InterviewAnswer,

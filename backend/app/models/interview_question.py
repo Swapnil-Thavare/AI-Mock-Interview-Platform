@@ -69,6 +69,23 @@ class InterviewQuestion(SQLModel, table=True):
         default=None,
         sa_column=sa.Column(sa.String(255), nullable=True),
     )
+    parent_question_id: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.UUID,
+            sa.ForeignKey("interview_questions.id", ondelete="CASCADE"),
+            nullable=True,
+            index=True,
+        ),
+    )
+    is_follow_up: bool = Field(
+        default=False,
+        sa_column=sa.Column(sa.Boolean, nullable=False, server_default=sa.text("false")),
+    )
+    follow_up_reason: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.Text, nullable=True),
+    )
     created_at: datetime | None = created_at_field()
     updated_at: datetime | None = updated_at_field()
 

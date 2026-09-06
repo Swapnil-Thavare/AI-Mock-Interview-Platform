@@ -82,6 +82,10 @@ class Interview(SQLModel, table=True):
             server_default=sa.text("'PENDING'"),
         ),
     )
+    completed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True),
+    )
     created_at: datetime | None = created_at_field()
     updated_at: datetime | None = updated_at_field()
 

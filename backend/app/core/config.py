@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.6-flash"
     GEMINI_TIMEOUT: int = 60
+    MAX_FOLLOW_UP_QUESTIONS: int = 3
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
