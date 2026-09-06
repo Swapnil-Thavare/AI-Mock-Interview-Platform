@@ -1,16 +1,5 @@
 import api from '@/services/api';
-import type { JobDescription, JobDescriptionAnalysis } from '@/types';
-
-const defaultAnalysis: JobDescriptionAnalysis = {
-  job_title: '',
-  required_skills: [],
-  preferred_skills: [],
-  technologies: [],
-  responsibilities: [],
-  experience_requirements: [],
-  education_requirements: [],
-  important_keywords: [],
-};
+import type { JobDescription } from '@/types';
 
 const normalizeJD = (data: Record<string, unknown>): JobDescription => {
   const analysis = (data.analysis as Record<string, unknown>) || {};
@@ -75,6 +64,4 @@ export const jobDescriptionService = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/job-descriptions/${id}`);
   },
-
-  getDefaultAnalysis: () => defaultAnalysis,
 };

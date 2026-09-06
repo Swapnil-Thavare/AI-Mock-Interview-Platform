@@ -114,6 +114,9 @@ export interface Question {
   topic?: string;
   expected_focus?: string;
   expectedAnswer?: string;
+  parent_question_id?: string;
+  is_follow_up?: boolean;
+  follow_up_reason?: string;
 }
 
 export interface Answer {
@@ -126,6 +129,32 @@ export interface Answer {
   submittedAt: string;
 }
 
+export interface AnswerEvaluation {
+  score: number;
+  relevance_score: number;
+  correctness_score: number;
+  clarity_score: number;
+  depth_score: number;
+  strengths: string[];
+  weaknesses: string[];
+  missing_points: string[];
+  improvement_feedback: string;
+  ideal_answer_summary: string;
+  follow_up_required: boolean;
+  follow_up_reason: string;
+  confidence: number;
+  uncertainty_notes: string;
+}
+
+export interface SubmitAnswerResponse {
+  answer: Answer;
+  evaluation?: AnswerEvaluation;
+  next_question?: Question;
+  follow_up_generated: boolean;
+  is_complete: boolean;
+  message: string;
+}
+
 export interface InterviewResult {
   interview_id?: string;
   score: number;
@@ -136,7 +165,18 @@ export interface InterviewResult {
   strengths: string[];
   weaknesses: string[];
   suggestions?: string[];
+  technical_score?: number | null;
+  communication_score?: number | null;
+  relevance_score?: number | null;
+  problem_solving_score?: number | null;
+  resume_alignment?: string | null;
+  missing_skills?: string[];
+  preparation_topics?: string[];
   questionResults?: QuestionResult[];
+  completion_summary?: string | null;
+  overall_feedback?: string | null;
+  confidence?: number | null;
+  uncertainty_notes?: string | null;
 }
 
 export interface QuestionResult {

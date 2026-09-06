@@ -30,23 +30,24 @@ const normalizeUser = (data: Record<string, unknown>): User => ({
   createdAt: (data.createdAt as string) ?? (data.created_at as string) ?? undefined,
 });
 
+const getToken = () => localStorage.getItem('token') ?? '';
+const getInFlightKey = () => getToken();
+const getCurrentUserInFlight = new Map<string, Promise<User | null>>();
+
 export const authService = {
   login: async (input: LoginInput): Promise<{ token: string; user: User }> => {
     const { data } = await api.post('/auth/login', input);
-    const token = (data.access_token as string) ?? (data.token as string) ?? '';
-
-    let user: User | null = null;
-    try {
-      localStorage.setItem('token', token);
-      user = await authService.getCurrentUser();
-    } catch {
-      /* /auth/me may not be available */
+    const token = (data.access_token as string) ?? (data.token as string);
+    if (!token) {
+      throw new Error('Login did not return a token');
     }
 
+    localStorage.setItem('token', token);
+    const user = await authService.getCurrentUser();
     if (!user) {
-      user = { id: '', email: input.email, name: input.email };
+      throw new Error('Could not load user after login');
     }
-
+    localStorage.setItem('user', JSON.stringify(user));
     return { token, user };
   },
 
@@ -70,22 +71,31 @@ export const authService = {
       email: input.email,
     };
 
+    localStorage.setItem('user', JSON.stringify(user));
     return { token: loginRes.token, user };
   },
 
   getCurrentUser: async (): Promise<User | null> => {
-    try {
-      const { data } = await api.get('/auth/me');
-      return normalizeUser(data);
-    } catch {
-      return null;
-    }
+    const key = getInFlightKey();
+    const pending = getCurrentUserInFlight.get(key);
+    if (pending) return pending;
+
+    const promise = api.get('/auth/me')
+      .then(({ data }) => normalizeUser(data as Record<string, unknown>))
+      .catch(() => null)
+      .finally(() => {
+        getCurrentUserInFlight.delete(key);
+      });
+
+    getCurrentUserInFlight.set(key, promise);
+    return promise;
   },
 
   logout: (): void => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('currentInterviewId');
+    getCurrentUserInFlight.clear();
   },
 
   updateMe: async (updates: Partial<User>): Promise<User> => {

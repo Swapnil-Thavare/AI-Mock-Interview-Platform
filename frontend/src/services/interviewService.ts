@@ -5,6 +5,8 @@ import type {
   Question,
   Answer,
   InterviewResult,
+  AnswerEvaluation,
+  SubmitAnswerResponse,
 } from '@/types';
 
 const normalizeQuestion = (data: Record<string, unknown>): Question => ({
@@ -17,11 +19,36 @@ const normalizeQuestion = (data: Record<string, unknown>): Question => ({
   topic: (data.topic as string) ?? undefined,
   expected_focus: (data.expected_focus as string) ?? undefined,
   expectedAnswer: (data.expected_focus as string) ?? undefined,
+  parent_question_id: data.parent_question_id ? String(data.parent_question_id) : undefined,
+  is_follow_up: Boolean(data.is_follow_up),
+  follow_up_reason: (data.follow_up_reason as string) ?? undefined,
+});
+
+const normalizeEvaluation = (data: Record<string, unknown>): AnswerEvaluation => ({
+  score: (data.score as number) ?? 0,
+  relevance_score: (data.relevance_score as number) ?? 0,
+  correctness_score: (data.correctness_score as number) ?? 0,
+  clarity_score: (data.clarity_score as number) ?? 0,
+  depth_score: (data.depth_score as number) ?? 0,
+  strengths: Array.isArray(data.strengths) ? (data.strengths as string[]) : [],
+  weaknesses: Array.isArray(data.weaknesses) ? (data.weaknesses as string[]) : [],
+  missing_points: Array.isArray(data.missing_points) ? (data.missing_points as string[]) : [],
+  improvement_feedback: (data.improvement_feedback as string) ?? '',
+  ideal_answer_summary: (data.ideal_answer_summary as string) ?? '',
+  follow_up_required: Boolean(data.follow_up_required),
+  follow_up_reason: (data.follow_up_reason as string) ?? '',
+  confidence: (data.confidence as number) ?? 0,
+  uncertainty_notes: (data.uncertainty_notes as string) ?? '',
 });
 
 const normalizeResult = (data: Record<string, unknown>): InterviewResult => {
   const rawScore = (data.score as number) ?? 0;
   const score = rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore);
+  const normalizeOptionalScore = (key: string) => {
+    const v = data[key] as number | null | undefined;
+    if (v === null || v === undefined) return null;
+    return v <= 1 ? Math.round(v * 100) : Math.round(v);
+  };
   return {
     interview_id: data.interview_id ? String(data.interview_id) : undefined,
     score,
@@ -32,6 +59,15 @@ const normalizeResult = (data: Record<string, unknown>): InterviewResult => {
     strengths: Array.isArray(data.strengths) ? (data.strengths as string[]) : [],
     weaknesses: Array.isArray(data.weaknesses) ? (data.weaknesses as string[]) : [],
     suggestions: Array.isArray(data.suggestions) ? (data.suggestions as string[]) : undefined,
+    technical_score: normalizeOptionalScore('technical_score'),
+    communication_score: normalizeOptionalScore('communication_score'),
+    relevance_score: normalizeOptionalScore('relevance_score'),
+    problem_solving_score: normalizeOptionalScore('problem_solving_score'),
+    resume_alignment: (data.resume_alignment as string) ?? null,
+    missing_skills: Array.isArray(data.missing_skills) ? (data.missing_skills as string[]) : undefined,
+    preparation_topics: Array.isArray(data.preparation_topics)
+      ? (data.preparation_topics as string[])
+      : undefined,
     questionResults: Array.isArray(data.question_results)
       ? (data.question_results as Record<string, unknown>[]).map((qr) => ({
           questionId: String(qr.question_id ?? qr.questionId ?? 0),
@@ -41,6 +77,10 @@ const normalizeResult = (data: Record<string, unknown>): InterviewResult => {
           feedback: (qr.feedback as string) ?? '',
         }))
       : undefined,
+    completion_summary: (data.completion_summary as string) ?? null,
+    overall_feedback: (data.overall_feedback as string) ?? null,
+    confidence: normalizeOptionalScore('confidence'),
+    uncertainty_notes: (data.uncertainty_notes as string) ?? null,
   };
 };
 
@@ -79,6 +119,13 @@ const questionTypesFromSetup = (setup: InterviewSetup): string[] => {
   return ['technical', 'behavioral'];
 };
 
+const getToken = () => localStorage.getItem('token') ?? '';
+
+const getByIdInFlight = new Map<string, Promise<Interview>>();
+const completeInFlight = new Map<string, Promise<InterviewResult>>();
+
+const cacheKey = (id: string) => `${getToken()}:${id}`;
+
 export const interviewService = {
   create: async (setup: InterviewSetup): Promise<Interview> => {
     const { data } = await api.post('/interviews', {
@@ -94,8 +141,16 @@ export const interviewService = {
   },
 
   getById: async (id: string): Promise<Interview> => {
-    const { data } = await api.get(`/interviews/${id}`);
-    return normalizeInterview(data as Record<string, unknown>);
+    const key = cacheKey(id);
+    const pending = getByIdInFlight.get(key);
+    if (pending) return pending;
+
+    const promise = api.get(`/interviews/${id}`).then(({ data }) => {
+      getByIdInFlight.delete(key);
+      return normalizeInterview(data as Record<string, unknown>);
+    });
+    getByIdInFlight.set(key, promise);
+    return promise;
   },
 
   getQuestions: async (interviewId: string): Promise<Question[]> => {
@@ -109,16 +164,36 @@ export const interviewService = {
     interviewId: string,
     _questionId: string,
     answer: Answer
-  ): Promise<void> => {
-    await api.post(`/interviews/${interviewId}/answers`, {
+  ): Promise<SubmitAnswerResponse> => {
+    const { data } = await api.post(`/interviews/${interviewId}/answers`, {
       question_id: answer.questionId,
       answer_text: answer.skipped ? '' : answer.text,
+      skipped: answer.skipped,
     });
+    const raw = (data ?? {}) as Record<string, unknown>;
+    return {
+      answer: raw.answer as Answer,
+      evaluation: raw.evaluation ? normalizeEvaluation(raw.evaluation as Record<string, unknown>) : undefined,
+      next_question: raw.next_question
+        ? normalizeQuestion(raw.next_question as Record<string, unknown>)
+        : undefined,
+      follow_up_generated: Boolean(raw.follow_up_generated),
+      is_complete: Boolean(raw.is_complete),
+      message: (raw.message as string) ?? 'Answer submitted',
+    };
   },
 
   complete: async (interviewId: string): Promise<InterviewResult> => {
-    const { data } = await api.post(`/interviews/${interviewId}/complete`);
-    return normalizeResult(data as Record<string, unknown>);
+    const key = cacheKey(interviewId);
+    const pending = completeInFlight.get(key);
+    if (pending) return pending;
+
+    const promise = api.post(`/interviews/${interviewId}/complete`).then(({ data }) => {
+      completeInFlight.delete(key);
+      return normalizeResult(data as Record<string, unknown>);
+    });
+    completeInFlight.set(key, promise);
+    return promise;
   },
 
   end: async (interviewId: string): Promise<InterviewResult> => {

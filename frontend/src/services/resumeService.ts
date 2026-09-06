@@ -1,20 +1,5 @@
 import api from '@/services/api';
-import type { Resume, ResumeAnalysis } from '@/types';
-
-const defaultAnalysis: ResumeAnalysis = {
-  summary: '',
-  technical_skills: [],
-  soft_skills: [],
-  programming_languages: [],
-  frameworks: [],
-  tools: [],
-  education: [],
-  experience: [],
-  projects: [],
-  certifications: [],
-  strengths: [],
-  improvements: [],
-};
+import type { Resume } from '@/types';
 
 const normalizeResume = (data: Record<string, unknown>): Resume => {
   const analysis = (data.analysis as Record<string, unknown>) || {};
@@ -70,6 +55,4 @@ export const resumeService = {
     const { data } = await api.get('/resume');
     return Array.isArray(data) ? data.map((r: Record<string, unknown>) => normalizeResume(r)) : [];
   },
-
-  getDefaultAnalysis: () => defaultAnalysis,
 };
