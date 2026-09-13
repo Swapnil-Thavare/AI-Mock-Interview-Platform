@@ -226,3 +226,6 @@ frontend/.env
 # Backend
 backend/.env
 backend/uploads/
+
+# App logs
+backend/tmp/
