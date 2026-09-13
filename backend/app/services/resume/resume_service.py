@@ -36,7 +36,8 @@ class Resume:
             raise CustomException(413, "PDF must be 10 MB or smaller")
         extracted_text = extract_text_from_pdf(content)
         analysis = await self._ai.analyze_resume(extracted_text)
-        file_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}_{file.filename}")
+        safe_name = os.path.basename(file.filename).replace("\\", "_").replace("/", "_")
+        file_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}_{safe_name}")
         with open(file_path, "wb") as f:
             f.write(content)
         skills = (
@@ -46,7 +47,7 @@ class Resume:
             + analysis.tools
         )
         create = ResumeCreate(
-            filename=file.filename,
+            filename=safe_name,
             file_size=len(content),
             file_path=file_path,
             extracted_text=extracted_text,

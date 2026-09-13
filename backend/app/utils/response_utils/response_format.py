@@ -28,6 +28,7 @@ class ResponseFormat:
             "success": False,
             "status_code": status_code,
             "message": message,
+            "detail": message,
             "timestamp": _now_iso(),
             "error": {"details": details},
         }
@@ -40,6 +41,7 @@ class ResponseFormat:
             "success": False,
             "status_code": 422,
             "message": error_msg,
+            "detail": error_msg,
             "timestamp": _now_iso(),
             "error": {
                 "type": "validation_error",

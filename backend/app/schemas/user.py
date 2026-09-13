@@ -1,26 +1,26 @@
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserBase(BaseModel):
-    email: str
-    full_name: str
+    email: EmailStr = Field(max_length=255)
+    full_name: str = Field(min_length=1, max_length=255)
 
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(min_length=8, max_length=128)
 
 
 class UserLogin(BaseModel):
-    email: str
-    password: str
+    email: EmailStr = Field(max_length=255)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
-    phone: Optional[str] = None
+    full_name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    phone: Optional[str] = Field(default=None, max_length=50)
     skills: Optional[List[str]] = None
     education: Optional[List[str]] = None
     experience: Optional[List[str]] = None

@@ -219,13 +219,19 @@ class Interview:
 
         interview = await self._query.create(payload, user_id)
         count = max(1, min(20, payload.question_count))
-        questions = await self._ai.generate_interview_questions(
+        try:
+            questions = await self._ai.generate_interview_questions(
             resume_analysis,
             job_analysis,
             payload.difficulty,
-            count,
-            payload.question_types or ["technical"],
-        )
+                count,
+                payload.question_types or ["technical"],
+            )
+        except Exception:
+            # Do not leave an orphan PENDING interview with no questions.
+            await self._db.delete(interview)
+            await self._db.commit()
+            raise
         for idx, q in enumerate(questions):
             raw_type = (q.get("question_type") or "technical").lower()
             q_type = QuestionType.BEHAVIORAL
@@ -304,7 +310,13 @@ class Interview:
             answer_text=answer_text,
         )
         self._db.add(db_answer)
-        await self._db.commit()
+        try:
+            await self._db.commit()
+        except IntegrityError:
+            await self._db.rollback()
+            raise CustomException(
+                400, "Answer already submitted for this question"
+            )
         await self._db.refresh(db_answer)
 
         evaluation_schema: Optional[InterviewAnswerEvaluation] = None
@@ -357,6 +369,10 @@ class Interview:
         interview = await self._get_owned_interview(user_id, interview_id)
         if interview.result is not None:
             return InterviewResultResponse.model_validate(interview.result)
+        if not interview.answers:
+            raise CustomException(
+                400, "Cannot complete an interview with no answers"
+            )
 
         report = await self._generate_report(interview)
         result = InterviewResultModel(

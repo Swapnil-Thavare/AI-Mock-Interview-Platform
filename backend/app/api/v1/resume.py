@@ -1,10 +1,11 @@
 import uuid
 from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.security import get_current_user
+from app.exception import CustomException
 from app.db.db import get_session
 from app.models.user import User
 from app.schemas import ResumeResponse
@@ -29,7 +30,7 @@ async def get_latest_resume(
 ):
     resume = await Resume(db).get_latest(current_user.id)
     if not resume:
-        raise HTTPException(status_code=404, detail="No resume found")
+        raise CustomException(404, "No resume found")
     return resume
 
 

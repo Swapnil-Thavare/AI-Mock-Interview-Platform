@@ -14,6 +14,13 @@ if TYPE_CHECKING:
 
 class InterviewAnswer(SQLModel, table=True):
     __tablename__ = "interview_answers"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "interview_id",
+            "question_id",
+            name="uq_interview_answers_interview_question",
+        ),
+    )
 
     id: uuid.UUID = Field(
         default_factory=uuid.uuid4,

@@ -117,12 +117,12 @@ class InterviewResultResponse(InterviewResult):
 
 
 class InterviewCreate(BaseModel):
-    title: str = "Untitled Interview"
+    title: str = Field(default="Untitled Interview", max_length=255)
     resume_id: Optional[UUID] = None
     job_description_id: Optional[UUID] = None
     difficulty: str = "medium"
-    question_count: int = 5
-    duration: int = 30
+    question_count: int = Field(default=5, ge=1, le=20)
+    duration: int = Field(default=30, ge=1, le=180)
     question_types: List[str] = ["technical", "behavioral"]
 
 

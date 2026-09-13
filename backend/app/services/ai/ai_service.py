@@ -7,6 +7,8 @@ one provider (Gemini) and returns validated Pydantic objects.
 import json
 from typing import Any, Dict, List
 
+from app.core.config import get_settings
+from app.exception import CustomException
 from app.services.ai.gemini_provider import GeminiProvider
 from app.services.ai.schemas import (
     AnswerEvaluationOutput,
@@ -169,9 +171,16 @@ class AIProviderInterface:
         raise NotImplementedError
 
 
+def _default_provider() -> "AIProviderInterface":
+    provider_name = (get_settings().AI_PROVIDER or "gemini").strip().lower()
+    if provider_name == "gemini":
+        return GeminiProvider()
+    raise CustomException(503, f"Unsupported AI provider: {provider_name}")
+
+
 class AIService:
     def __init__(self, provider: AIProviderInterface | None = None):
-        self._provider = provider or GeminiProvider()
+        self._provider = provider or _default_provider()
 
     async def analyze_resume(self, resume_text: str) -> ResumeAnalysisOutput:
         prompt = _RESUME_PROMPT.format(text=resume_text[:30000])

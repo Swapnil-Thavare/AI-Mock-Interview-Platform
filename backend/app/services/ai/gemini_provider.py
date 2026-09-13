@@ -42,10 +42,13 @@ class GeminiProvider:
         self,
         prompt: str,
         response_schema: Type[T],
-        timeout: float = _DEFAULT_TIMEOUT,
+        timeout: float | None = None,
     ) -> T:
         client = _get_client()
         model = _get_model()
+        effective_timeout = float(
+            timeout or get_settings().GEMINI_TIMEOUT or _DEFAULT_TIMEOUT
+        )
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,
@@ -59,7 +62,7 @@ class GeminiProvider:
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             try:
-                with anyio.move_on_after(timeout) as cancel_scope:
+                with anyio.move_on_after(effective_timeout) as cancel_scope:
                     response = await client.aio.models.generate_content(
                         model=model,
                         contents=prompt,
@@ -89,5 +92,5 @@ class GeminiProvider:
         raise CustomException(
             502,
             "Could not parse a valid structured response from Gemini.",
-            {"detail": str(last_error)} if last_error else None,
+            {"reason": "invalid_response"},
         )

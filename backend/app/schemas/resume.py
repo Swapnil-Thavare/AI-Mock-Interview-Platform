@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -26,5 +27,5 @@ class Resume(ResumeBase):
 class ResumeResponse(ResumeBase):
     id: UUID
     user_id: UUID
-    file_path: Optional[str] = None
+    created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
