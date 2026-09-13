@@ -1,20 +1,37 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { resumeService } from '@/services/resumeService';
+import { getApiErrorMessage } from '@/services/api';
 import type { Resume as ResumeType } from '@/types';
 
 export const Resume: React.FC = () => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [resumes, setResumes] = useState<ResumeType[]>([]);
   const [resume, setResume] = useState<ResumeType | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    resumeService.list().then(setResumes).catch(() => setResumes([]));
+    let ignore = false;
+    resumeService
+      .list()
+      .then((data) => {
+        if (!ignore) setResumes(data);
+      })
+      .catch((err) => {
+        if (!ignore) setError(getApiErrorMessage(err, 'Could not load your resumes.'));
+      })
+      .finally(() => {
+        if (!ignore) setListLoading(false);
+      });
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -45,8 +62,9 @@ export const Resume: React.FC = () => {
       setResume(data);
       setResumes((prev) => [data, ...prev]);
       setFile(null);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || 'Could not upload resume. Please try again.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Could not upload resume. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -62,6 +80,7 @@ export const Resume: React.FC = () => {
           <h3 className="mb-4 text-lg font-semibold">Upload resume (PDF)</h3>
           <form onSubmit={handleUpload} className="space-y-4">
             <input
+              ref={fileInputRef}
               type="file"
               accept=".pdf,application/pdf"
               onChange={handleFileChange}
@@ -148,7 +167,9 @@ export const Resume: React.FC = () => {
         </div>
       </div>
 
-      {resumes.length > 0 && (
+      {listLoading ? (
+        <p className="mt-8 text-sm text-gray-600">Loading your resumes...</p>
+      ) : resumes.length > 0 ? (
         <div className="mt-8">
           <h3 className="mb-4 text-lg font-semibold text-gray-900">Your resumes</h3>
           <div className="space-y-3">
@@ -168,6 +189,12 @@ export const Resume: React.FC = () => {
             ))}
           </div>
         </div>
+      ) : (
+        !error && (
+          <div className="mt-8 rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-600">
+            No resumes uploaded yet.
+          </div>
+        )
       )}
     </DashboardLayout>
   );

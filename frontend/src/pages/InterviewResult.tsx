@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -23,19 +23,44 @@ const ScoreCard: React.FC<{ label: string; value: number | null | undefined; col
 
 export const InterviewResult: React.FC = () => {
   const navigate = useNavigate();
+  const { interviewId } = useParams<{ interviewId: string }>();
   const [result, setResult] = useState<InterviewResultType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const id = localStorage.getItem('currentInterviewId');
+  const id = interviewId ?? localStorage.getItem('currentInterviewId');
+
+  const load = useCallback(async () => {
     if (!id) {
       navigate('/interview/setup');
       return;
     }
+    setLoading(true);
+    setError('');
+    try {
+      const interview = await interviewService.getById(id);
+      if (interview.result) {
+        setResult(interview.result);
+      } else {
+        const data = await interviewService.complete(id);
+        setResult(data);
+      }
+    } catch {
+      setError('Could not load results. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [id, navigate]);
 
+  useEffect(() => {
     let ignore = false;
-    const load = async () => {
+    const run = async () => {
+      if (!id) {
+        navigate('/interview/setup');
+        return;
+      }
+      setLoading(true);
+      setError('');
       try {
         const interview = await interviewService.getById(id);
         if (ignore) return;
@@ -52,11 +77,11 @@ export const InterviewResult: React.FC = () => {
       }
     };
 
-    void load();
+    void run();
     return () => {
       ignore = true;
     };
-  }, [navigate]);
+  }, [navigate, interviewId]);
 
   if (loading) {
     return (
@@ -69,7 +94,12 @@ export const InterviewResult: React.FC = () => {
   if (error) {
     return (
       <DashboardLayout>
-        <div className="py-20 text-center text-red-600">{error}</div>
+        <div className="py-20 text-center">
+          <p className="mb-4 text-red-600">{error}</p>
+          <Button onClick={load} disabled={loading}>
+            {loading ? 'Retrying...' : 'Retry'}
+          </Button>
+        </div>
       </DashboardLayout>
     );
   }

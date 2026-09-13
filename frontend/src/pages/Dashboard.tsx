@@ -5,22 +5,30 @@ import { StatCard } from '@/components/dashboard/StatCard';
 import { InterviewRow } from '@/components/dashboard/InterviewRow';
 import { Button } from '@/components/ui/Button';
 import { interviewService } from '@/services/interviewService';
+import { getApiErrorMessage } from '@/services/api';
 import type { Interview } from '@/types';
 
 export const Dashboard: React.FC = () => {
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
+    let ignore = false;
     const load = async () => {
       try {
         const data = await interviewService.getHistory();
-        setInterviews(data);
+        if (!ignore) setInterviews(data);
+      } catch (err) {
+        if (!ignore) setError(getApiErrorMessage(err, 'Could not load your interviews.'));
       } finally {
-        setLoading(false);
+        if (!ignore) setLoading(false);
       }
     };
     load();
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const stats = useMemo(() => {
@@ -69,6 +77,8 @@ export const Dashboard: React.FC = () => {
       <h3 className="mb-4 text-lg font-semibold text-gray-900">Recent interviews</h3>
       {loading ? (
         <p className="text-sm text-gray-600">Loading interviews...</p>
+      ) : error ? (
+        <p className="text-sm text-red-600">{error}</p>
       ) : (
         <div className="space-y-3">
           {recent.length ? (

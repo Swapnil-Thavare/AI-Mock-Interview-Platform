@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { Interview } from '@/types';
 import { Badge } from '@/components/ui/Badge';
 
@@ -8,8 +8,16 @@ interface InterviewRowProps {
 }
 
 export const InterviewRow: React.FC<InterviewRowProps> = ({ interview }) => {
+  const navigate = useNavigate();
+  const completed = interview.status === 'completed' || Boolean(interview.result);
+
+  const handleResume = () => {
+    localStorage.setItem('currentInterviewId', interview.id);
+    navigate('/interview');
+  };
+
   return (
-    <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4">
+    <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h4 className="font-medium text-gray-900">{interview.title}</h4>
         <p className="text-sm text-gray-500">
@@ -18,7 +26,7 @@ export const InterviewRow: React.FC<InterviewRowProps> = ({ interview }) => {
         </p>
       </div>
       <div className="flex items-center gap-4">
-        <Badge color={interview.status === 'completed' ? 'green' : 'yellow'}>
+        <Badge color={completed ? 'green' : 'yellow'}>
           {interview.status}
         </Badge>
         {interview.result && (
@@ -26,12 +34,21 @@ export const InterviewRow: React.FC<InterviewRowProps> = ({ interview }) => {
             {interview.result.score}%
           </span>
         )}
-        <Link
-          to={`/interview/result`}
-          className="text-sm font-medium text-primary-600 hover:underline"
-        >
-          View
-        </Link>
+        {completed ? (
+          <Link
+            to={`/interview/result/${interview.id}`}
+            className="text-sm font-medium text-primary-600 hover:underline"
+          >
+            View
+          </Link>
+        ) : (
+          <button
+            onClick={handleResume}
+            className="text-sm font-medium text-primary-600 hover:underline"
+          >
+            Resume
+          </button>
+        )}
       </div>
     </div>
   );

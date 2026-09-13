@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { getApiErrorMessage } from '@/services/api';
 
 export const Register: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { register } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -20,9 +22,10 @@ export const Register: React.FC = () => {
     setError('');
     try {
       await register(name, email, password);
-      navigate('/dashboard');
-    } catch {
-      setError('Could not create account. Please try again.');
+      const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+      navigate(from && from !== '/register' ? from : '/dashboard', { replace: true });
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Could not create account. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -60,6 +63,7 @@ export const Register: React.FC = () => {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          minLength={8}
           required
         />
         {error && <p className="text-sm text-red-600">{error}</p>}

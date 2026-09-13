@@ -20,7 +20,7 @@ const splitStrings = (value: string): string[] =>
     .filter(Boolean);
 
 export const Profile: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, updateUser } = useAuth();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [skills, setSkills] = useState('');
@@ -63,13 +63,15 @@ export const Profile: React.FC = () => {
     setSaving(true);
     setMessage('');
     try {
-      await authService.updateMe({
+      const updated = await authService.updateMe({
         name,
+        full_name: name,
         phone,
         skills: splitStrings(skills),
         education: splitStrings(education),
         experience: splitStrings(experience),
       });
+      updateUser(updated);
       setMessage('Profile updated.');
     } catch {
       setMessage('Could not update profile.');

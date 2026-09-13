@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/Select';
 import { jobDescriptionService } from '@/services/jobDescriptionService';
 import { resumeService } from '@/services/resumeService';
 import { matchService } from '@/services/matchService';
+import { getApiErrorMessage } from '@/services/api';
 import type { JobDescription as JobDescriptionType, Resume, ResumeJDMatch } from '@/types';
 
 export const JobDescription: React.FC = () => {
@@ -22,10 +23,15 @@ export const JobDescription: React.FC = () => {
   const [selectedResume, setSelectedResume] = useState('');
   const [match, setMatch] = useState<ResumeJDMatch | null>(null);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
   const [matchLoading, setMatchLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [listError, setListError] = useState('');
 
   const refreshList = async () => {
+    setListLoading(true);
+    setListError('');
     try {
       const [list, resumeList] = await Promise.all([
         jobDescriptionService.list(),
@@ -33,9 +39,10 @@ export const JobDescription: React.FC = () => {
       ]);
       setJds(list);
       setResumes(resumeList);
-    } catch {
-      setJds([]);
-      setResumes([]);
+    } catch (err) {
+      setListError(getApiErrorMessage(err, 'Could not load your job descriptions.'));
+    } finally {
+      setListLoading(false);
     }
   };
 
@@ -63,20 +70,25 @@ export const JobDescription: React.FC = () => {
       setCompany('');
       setDescription('');
       setRequiredSkills('');
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || 'Could not save job description. Please try again.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Could not save job description. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (deletingId) return;
+    setDeletingId(id);
+    setError('');
     try {
       await jobDescriptionService.delete(id);
       setJds((prev) => prev.filter((j) => j.id !== id));
       if (active?.id === id) setActive(null);
-    } catch {
-      // tolerate missing delete endpoint
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Could not delete the job description.'));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -90,8 +102,8 @@ export const JobDescription: React.FC = () => {
         jobDescriptionId: active.id,
       });
       setMatch(result);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || 'Could not generate match analysis.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Could not generate match analysis.'));
     } finally {
       setMatchLoading(false);
     }
@@ -247,7 +259,15 @@ export const JobDescription: React.FC = () => {
         </div>
       )}
 
-      {jds.length > 0 && (
+      {listLoading ? (
+        <p className="mt-8 text-sm text-gray-600">Loading your job descriptions...</p>
+      ) : listError ? (
+        <p className="mt-8 text-sm text-red-600">{listError}</p>
+      ) : jds.length === 0 ? (
+        <div className="mt-8 rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-600">
+          No job descriptions yet. Add one above to see AI analysis and resume matching.
+        </div>
+      ) : (
         <div className="mt-8">
           <h3 className="mb-4 text-lg font-semibold text-gray-900">Your job descriptions</h3>
           <div className="space-y-3">
@@ -266,8 +286,9 @@ export const JobDescription: React.FC = () => {
                 <Button
                   variant="secondary"
                   onClick={() => handleDelete(jd.id)}
+                  disabled={deletingId === jd.id}
                 >
-                  Delete
+                  {deletingId === jd.id ? 'Deleting...' : 'Delete'}
                 </Button>
               </Card>
             ))}

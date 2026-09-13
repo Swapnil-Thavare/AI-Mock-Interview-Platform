@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { getApiErrorMessage } from '@/services/api';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,9 +21,10 @@ export const Login: React.FC = () => {
     setError('');
     try {
       await login(email, password);
-      navigate('/dashboard');
-    } catch {
-      setError('Invalid email or password.');
+      const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+      navigate(from && from !== '/login' ? from : '/dashboard', { replace: true });
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Invalid email or password.'));
     } finally {
       setLoading(false);
     }

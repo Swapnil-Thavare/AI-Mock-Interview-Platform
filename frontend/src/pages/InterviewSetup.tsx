@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { interviewService } from '@/services/interviewService';
 import { resumeService } from '@/services/resumeService';
 import { jobDescriptionService } from '@/services/jobDescriptionService';
+import { getApiErrorMessage } from '@/services/api';
 import type { InterviewSetup as InterviewSetupType, Resume, JobDescription } from '@/types';
 
 export const InterviewSetup: React.FC = () => {
@@ -47,9 +48,9 @@ export const InterviewSetup: React.FC = () => {
       localStorage.setItem('currentInterviewId', String(interview.id));
       setLoading(false);
       navigate('/interview');
-    } catch (err: any) {
+    } catch (err) {
       setLoading(false);
-      setError(err?.response?.data?.detail || err?.message || 'Could not start interview. Please try again.');
+      setError(getApiErrorMessage(err, 'Could not start interview. Please try again.'));
     }
   };
 

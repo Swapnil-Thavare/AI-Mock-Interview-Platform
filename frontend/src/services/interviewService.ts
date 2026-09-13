@@ -145,10 +145,12 @@ export const interviewService = {
     const pending = getByIdInFlight.get(key);
     if (pending) return pending;
 
-    const promise = api.get(`/interviews/${id}`).then(({ data }) => {
-      getByIdInFlight.delete(key);
-      return normalizeInterview(data as Record<string, unknown>);
-    });
+    const promise = api
+      .get(`/interviews/${id}`)
+      .then(({ data }) => normalizeInterview(data as Record<string, unknown>))
+      .finally(() => {
+        getByIdInFlight.delete(key);
+      });
     getByIdInFlight.set(key, promise);
     return promise;
   },
@@ -188,10 +190,12 @@ export const interviewService = {
     const pending = completeInFlight.get(key);
     if (pending) return pending;
 
-    const promise = api.post(`/interviews/${interviewId}/complete`).then(({ data }) => {
-      completeInFlight.delete(key);
-      return normalizeResult(data as Record<string, unknown>);
-    });
+    const promise = api
+      .post(`/interviews/${interviewId}/complete`)
+      .then(({ data }) => normalizeResult(data as Record<string, unknown>))
+      .finally(() => {
+        completeInFlight.delete(key);
+      });
     completeInFlight.set(key, promise);
     return promise;
   },

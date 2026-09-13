@@ -19,6 +19,7 @@ const protectedRoutes = [
   { path: '/job-description', element: <JobDescription /> },
   { path: '/interview/setup', element: <InterviewSetup /> },
   { path: '/interview', element: <Interview /> },
+  { path: '/interview/result/:interviewId', element: <InterviewResult /> },
   { path: '/interview/result', element: <InterviewResult /> },
   { path: '/interviews', element: <InterviewHistory /> },
   { path: '/profile', element: <Profile /> },

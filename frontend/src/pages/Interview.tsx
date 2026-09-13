@@ -6,6 +6,7 @@ import { Timer } from '@/components/interview/Timer';
 import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Textarea';
 import { interviewService } from '@/services/interviewService';
+import { getApiErrorMessage } from '@/services/api';
 import type { Interview as InterviewType, Question, AnswerEvaluation } from '@/types';
 
 const QUESTION_TIME = 120;
@@ -26,7 +27,7 @@ export const Interview: React.FC = () => {
       const data = await interviewService.getById(id);
       setInterview(data);
       if (data.result) {
-        navigate('/interview/result');
+        navigate(`/interview/result/${id}`);
         return;
       }
       const answeredIds = new Set(data.answers.map((a) => a.questionId ?? a.question_id));
@@ -95,8 +96,8 @@ export const Interview: React.FC = () => {
 
       setCurrent(response.next_question);
       setText('');
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || 'Could not submit answer. Please try again.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Could not submit answer. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -127,8 +128,8 @@ export const Interview: React.FC = () => {
 
       setCurrent(response.next_question);
       setText('');
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || 'Could not skip question. Please try again.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Could not skip question. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -140,13 +141,13 @@ export const Interview: React.FC = () => {
     setError('');
     try {
       await interviewService.complete(interviewId);
-      navigate('/interview/result');
-    } catch (err: any) {
+      navigate(`/interview/result/${interviewId}`);
+    } catch (err) {
       const data = currentInterview ?? interview;
       if (data?.answers.length === 0) {
         setError('Please answer at least one question before finishing.');
       } else {
-        setError(err?.response?.data?.detail || err?.message || 'Could not finish the interview. Please try again.');
+        setError(getApiErrorMessage(err, 'Could not finish the interview. Please try again.'));
       }
       setLoading(false);
     }
@@ -178,6 +179,7 @@ export const Interview: React.FC = () => {
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-bold text-gray-900">Mock interview</h2>
         <Timer
+          key={current.id}
           durationSeconds={QUESTION_TIME}
           onTimeUp={() => {
             if (text.trim()) handleSubmit();

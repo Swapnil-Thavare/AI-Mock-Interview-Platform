@@ -34,9 +34,7 @@ export const resumeService = {
   upload: async (file: File): Promise<Resume> => {
     const form = new FormData();
     form.append('file', file);
-    const { data } = await api.post('/resume/upload', form, {
-      headers: { 'Content-Type': undefined },
-    });
+    const { data } = await api.post('/resume/upload', form);
     return normalizeResume(data as Record<string, unknown>);
   },
 
