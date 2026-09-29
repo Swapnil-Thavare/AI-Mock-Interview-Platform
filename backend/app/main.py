@@ -1,4 +1,4 @@
-"""FastAPI root app — mirrors the reference's router mounting pattern."""
+"""FastAPI application entrypoint: app factory, middleware, exception handlers, routers."""
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware

@@ -1,4 +1,4 @@
-"""Application logging — mirrors the reference's `app.logging` module."""
+"""Application logging: console + file handlers under tmp/app.log."""
 import logging
 import os
 from pathlib import Path
@@ -32,9 +32,3 @@ def setup_logging() -> None:
     root.addHandler(file_handler)
 
     _INITIALIZED = True
-
-
-def get_logger(name: str) -> logging.Logger:
-    if not _INITIALIZED:
-        setup_logging()
-    return logging.getLogger(name)

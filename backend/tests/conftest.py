@@ -205,7 +205,7 @@ def mock_gemini(monkeypatch):
                         ai_schemas.QuestionResultSummary(
                             question_id="",
                             question="What is FastAPI?",
-                            answer_summary="Candidate explained FastAPI clearly.",
+                            answer="Candidate explained FastAPI clearly.",
                             score=75,
                             feedback="Good but could be more detailed.",
                         )

@@ -1,5 +1,4 @@
 """Async SQLModel / asyncpg database session and engine."""
-from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -39,23 +38,4 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-class _Database:
-    @asynccontextmanager
-    async def session(self):
-        async with AsyncSessionLocal() as session:
-            yield session
-
-    @asynccontextmanager
-    async def transaction(self):
-        async with AsyncSessionLocal() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-
-
-Database = _Database()
-
-__all__ = ["Database", "async_engine", "get_session", "AsyncSessionLocal"]
+__all__ = ["async_engine", "get_session", "AsyncSessionLocal"]
