@@ -1,10 +1,14 @@
 import os
 import uuid
+from functools import lru_cache
 from typing import List
 
+import anyio
 from fastapi import UploadFile
 from sqlmodel.ext.asyncio.session import AsyncSession
+from supabase import Client, create_client
 
+from app.core.config import get_settings
 from app.exception import CustomException
 from app.schemas.resume import ResumeCreate, ResumeResponse
 from app.services.ai.ai_service import AIService
@@ -16,9 +20,48 @@ UPLOAD_DIR = os.path.join(
     "uploads",
     "resumes",
 )
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+@lru_cache
+def _get_supabase_client() -> Client:
+    settings = get_settings()
+    return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+
+
+def _supabase_configured() -> bool:
+    settings = get_settings()
+    return bool(settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY)
+
+
+def _upload_resume_file(storage_path: str, content: bytes) -> str:
+    """Store a resume PDF and return the reference to persist in resumes.file_path.
+
+    Supabase Storage is used whenever it is configured. When it is not, local
+    development falls back to uploads/resumes on disk; production refuses to
+    silently degrade and returns 503 instead.
+    """
+    settings = get_settings()
+    if not _supabase_configured():
+        if settings.ENVIRONMENT.lower() == "production":
+            raise CustomException(503, "Resume storage is not configured.")
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        local_path = os.path.join(UPLOAD_DIR, storage_path)
+        with open(local_path, "wb") as f:
+            f.write(content)
+        return local_path
+    try:
+        _get_supabase_client().storage.from_(settings.SUPABASE_STORAGE_BUCKET).upload(
+            path=storage_path,
+            file=content,
+            file_options={"content-type": "application/pdf"},
+        )
+    except CustomException:
+        raise
+    except Exception as exc:
+        raise CustomException(502, f"Resume storage upload failed: {type(exc).__name__}") from exc
+    return storage_path
 
 
 class Resume:
@@ -37,9 +80,10 @@ class Resume:
         extracted_text = extract_text_from_pdf(content)
         analysis = await self._ai.analyze_resume(extracted_text)
         safe_name = os.path.basename(file.filename).replace("\\", "_").replace("/", "_")
-        file_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}_{safe_name}")
-        with open(file_path, "wb") as f:
-            f.write(content)
+        storage_path = f"{uuid.uuid4()}_{safe_name}"
+        file_path = await anyio.to_thread.run_sync(
+            _upload_resume_file, storage_path, content
+        )
         skills = (
             analysis.technical_skills
             + analysis.programming_languages

@@ -216,3 +216,12 @@ def mock_gemini(monkeypatch):
     monkeypatch.setattr(
         "app.services.ai.ai_service.GeminiProvider", FakeGeminiProvider
     )
+
+
+@pytest.fixture(autouse=True)
+def mock_resume_storage(monkeypatch):
+    """Resume PDFs must never hit real Supabase Storage in tests."""
+    monkeypatch.setattr(
+        "app.services.resume.resume_service._upload_resume_file",
+        lambda storage_path, content: None,
+    )

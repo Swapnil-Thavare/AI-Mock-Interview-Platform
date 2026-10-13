@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     GEMINI_TIMEOUT: int = 60
     MAX_FOLLOW_UP_QUESTIONS: int = 3
 
+    # Supabase Storage (resume files)
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_STORAGE_BUCKET: str = "resumes"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
