@@ -5,6 +5,7 @@ pydantic-settings
 sqlmodel
 asyncpg
 sqlalchemy
+greenlet
 alembic
 python-multipart
 pytest
