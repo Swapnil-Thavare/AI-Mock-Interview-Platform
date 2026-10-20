@@ -3,11 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { QuestionCard } from '@/components/interview/QuestionCard';
 import { Timer } from '@/components/interview/Timer';
+import { InterviewDeviceCheck } from '@/components/interview/InterviewDeviceCheck';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Textarea';
 import { interviewService } from '@/services/interviewService';
 import { getApiErrorMessage } from '@/services/api';
-import type { Interview as InterviewType, Question, AnswerEvaluation } from '@/types';
+import type {
+  Interview as InterviewType,
+  InterviewMode,
+  Question,
+  AnswerEvaluation,
+} from '@/types';
 
 const QUESTION_TIME = 120;
 
@@ -21,11 +28,16 @@ export const Interview: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [evaluation, setEvaluation] = useState<AnswerEvaluation | null>(null);
+  const [activeMode, setActiveMode] = useState<InterviewMode>('TEXT');
+  const [devicesReady, setDevicesReady] = useState(false);
 
   const loadInterview = useCallback(async (id: string) => {
     try {
       const data = await interviewService.getById(id);
       setInterview(data);
+      const mode = data.interview_mode ?? 'TEXT';
+      setActiveMode(mode);
+      setDevicesReady(mode === 'TEXT');
       if (data.result) {
         navigate(`/interview/result/${id}`);
         return;
@@ -135,6 +147,19 @@ export const Interview: React.FC = () => {
     }
   };
 
+  const handleModeSwitch = async (mode: InterviewMode) => {
+    setActiveMode(mode);
+    setDevicesReady(mode === 'TEXT');
+    if (interviewId) {
+      try {
+        const updated = await interviewService.updateMode(interviewId, mode);
+        setInterview(updated);
+      } catch {
+        // The downgrade still applies for this session if it cannot be saved.
+      }
+    }
+  };
+
   const handleEnd = async (currentInterview?: InterviewType) => {
     if (!interviewId) return;
     setLoading(true);
@@ -161,6 +186,19 @@ export const Interview: React.FC = () => {
     );
   }
 
+  if (interview && activeMode !== 'TEXT' && !devicesReady) {
+    return (
+      <DashboardLayout>
+        <InterviewDeviceCheck
+          mode={activeMode}
+          onReady={() => setDevicesReady(true)}
+          onSwitchMode={(mode) => void handleModeSwitch(mode)}
+          onCancel={() => navigate('/interview/setup')}
+        />
+      </DashboardLayout>
+    );
+  }
+
   if (!current) {
     return (
       <DashboardLayout>
@@ -177,7 +215,14 @@ export const Interview: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold text-gray-900">Mock interview</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-bold text-gray-900">Mock interview</h2>
+          {interview?.interview_mode && interview.interview_mode !== 'TEXT' && (
+            <Badge color="primary">
+              {interview.interview_mode === 'VIDEO' ? 'Video' : 'Audio'}
+            </Badge>
+          )}
+        </div>
         <Timer
           key={current.id}
           durationSeconds={QUESTION_TIME}

@@ -8,7 +8,30 @@ import { interviewService } from '@/services/interviewService';
 import { resumeService } from '@/services/resumeService';
 import { jobDescriptionService } from '@/services/jobDescriptionService';
 import { getApiErrorMessage } from '@/services/api';
-import type { InterviewSetup as InterviewSetupType, Resume, JobDescription } from '@/types';
+import type {
+  InterviewMode,
+  InterviewSetup as InterviewSetupType,
+  Resume,
+  JobDescription,
+} from '@/types';
+
+const INTERVIEW_MODES: { value: InterviewMode; label: string; description: string }[] = [
+  {
+    value: 'TEXT',
+    label: 'Text',
+    description: 'Type your answers. No camera or microphone required.',
+  },
+  {
+    value: 'AUDIO',
+    label: 'Audio',
+    description: 'Speak your answers. A microphone is required.',
+  },
+  {
+    value: 'VIDEO',
+    label: 'Video',
+    description: 'Camera and microphone. Recommended for the full interview experience.',
+  },
+];
 
 export const InterviewSetup: React.FC = () => {
   const navigate = useNavigate();
@@ -21,6 +44,7 @@ export const InterviewSetup: React.FC = () => {
     questionCount: 5,
     type: 'mixed',
     duration: 30,
+    interviewMode: 'TEXT',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -92,6 +116,48 @@ export const InterviewSetup: React.FC = () => {
               ...jobs.map((j) => ({ value: j.id, label: `${j.title} ${j.company ? `— ${j.company}` : ''}` })),
             ]}
           />
+          <div>
+            <span className="mb-1 block text-sm font-medium text-gray-700">
+              Interview mode
+            </span>
+            <div
+              role="radiogroup"
+              aria-label="Interview mode"
+              className="grid gap-3 sm:grid-cols-3"
+            >
+              {INTERVIEW_MODES.map((mode) => {
+                const selected = setup.interviewMode === mode.value;
+                return (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => update('interviewMode', mode.value)}
+                    className={`rounded-lg border p-3 text-left transition focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                      selected
+                        ? 'border-primary-600 bg-primary-50'
+                        : 'border-gray-300 bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold text-gray-900">
+                      {mode.label}
+                    </span>
+                    <span className="mt-1 block text-xs text-gray-600">
+                      {mode.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {setup.interviewMode !== 'TEXT' && (
+              <p className="mt-2 text-xs text-gray-500">
+                You will be asked to check your{' '}
+                {setup.interviewMode === 'VIDEO' ? 'camera and microphone' : 'microphone'}{' '}
+                before the interview starts. Nothing is recorded during the check.
+              </p>
+            )}
+          </div>
           <Select
             label="Difficulty"
             value={setup.difficulty}

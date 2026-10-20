@@ -1,6 +1,7 @@
 import api from '@/services/api';
 import type {
   Interview,
+  InterviewMode,
   InterviewSetup,
   Question,
   Answer,
@@ -93,6 +94,7 @@ const normalizeSetup = (data: Record<string, unknown>, setup?: InterviewSetup): 
     questionCount: (data.question_count as number) ?? 5,
     type: 'mixed',
     duration: (data.duration as number) ?? 30,
+    interviewMode: ((data.interview_mode as InterviewMode) ?? 'TEXT') as InterviewMode,
   };
 };
 
@@ -103,6 +105,7 @@ const normalizeInterview = (data: Record<string, unknown>, setup?: InterviewSetu
   setup: normalizeSetup(data, setup),
   title: (data.title as string) ?? 'Mock Interview',
   status: (data.status as string) ?? 'in-progress',
+  interview_mode: ((data.interview_mode as InterviewMode) ?? 'TEXT') as InterviewMode,
   startedAt: (data.created_at as string) ?? (data.createdAt as string) ?? new Date().toISOString(),
   completedAt: (data.completed_at as string) ?? (data.completedAt as string) ?? undefined,
   questions: Array.isArray(data.questions)
@@ -136,8 +139,16 @@ export const interviewService = {
       question_count: setup.questionCount,
       duration: setup.duration,
       question_types: questionTypesFromSetup(setup),
+      interview_mode: setup.interviewMode,
     });
     return normalizeInterview(data as Record<string, unknown>, setup);
+  },
+
+  updateMode: async (interviewId: string, mode: InterviewMode): Promise<Interview> => {
+    const { data } = await api.patch(`/interviews/${interviewId}/mode`, {
+      interview_mode: mode,
+    });
+    return normalizeInterview(data as Record<string, unknown>);
   },
 
   getById: async (id: string): Promise<Interview> => {

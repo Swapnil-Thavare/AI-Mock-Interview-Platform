@@ -17,6 +17,7 @@ Job seekers rarely get realistic, structured interview practice tailored to thei
 - **Job descriptions** — create, list, and delete JDs with AI analysis (required/preferred skills, technologies, responsibilities, experience/education requirements, keywords).
 - **Resume ↔ JD matching** — AI compatibility report with overall match score, matched/missing skills, strengths, gaps, and recommendations; one persisted match per user/resume/JD.
 - **Mock interviews** — configurable difficulty, question count, duration, and question types; AI-generated personalized questions; per-question timer and progress bar.
+- **Interview modes** — each interview runs as `TEXT`, `AUDIO`, or `VIDEO` (persisted per interview). AUDIO/VIDEO show a pre-interview device readiness screen that requests browser microphone/camera permission via `navigator.mediaDevices.getUserMedia`, reports per-device status, and allows retry or fallback to a simpler mode. Phase 7A only establishes device readiness — no recording, transcription, or proctoring yet.
 - **Answer evaluation** — every submitted answer is evaluated by Gemini (score, per-dimension scores, strengths, weaknesses, missing points, improvement feedback, confidence, uncertainty notes).
 - **Adaptive follow-ups** — when the evaluation flags `follow_up_required`, a contextual follow-up question is generated (capped by `MAX_FOLLOW_UP_QUESTIONS`).
 - **Final report** — overall score plus technical, communication, relevance, and problem-solving scores; strengths, weaknesses, missing skills, preparation topics, and question-level feedback.
@@ -194,7 +195,7 @@ npm run build              # tsc + vite production build
 
 - Text-based PDFs only; scanned/image PDFs are rejected.
 - The per-question timer is client-side and not enforced by the server.
-- Interviews are text Q&A only — no voice, video, or coding rounds.
+- Interviews are text Q&A only for answering — AUDIO/VIDEO modes currently gate on a device permission check but do not record, transcribe, or analyze media yet.
 - No RAG / vector database and no multi-agent system — all AI calls are single-shot Gemini prompts.
 - Answer evaluation failures are tolerated (the answer is stored without an evaluation); report generation falls back to a safe degraded report.
 - Resume files are stored on the local filesystem (`backend/uploads/`).
@@ -202,7 +203,7 @@ npm run build              # tsc + vite production build
 
 ## 21. Future Enhancements
 
-- Voice/video interviews and speech-to-text
+- Voice/video recording, speech-to-text, and proctoring (Phase 7B+; device readiness foundation already in place)
 - Coding interview rounds
 - RAG / vector search over question banks
 - Richer analytics and progress tracking

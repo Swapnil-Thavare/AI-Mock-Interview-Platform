@@ -80,6 +80,8 @@ export interface JobDescription {
   createdAt?: string;
 }
 
+export type InterviewMode = 'TEXT' | 'AUDIO' | 'VIDEO';
+
 export interface InterviewSetup {
   resumeId: string;
   jobDescriptionId: string;
@@ -88,6 +90,7 @@ export interface InterviewSetup {
   type: 'technical' | 'behavioral' | 'mixed';
   question_types?: string[];
   duration: number;
+  interviewMode: InterviewMode;
 }
 
 export interface Interview {
@@ -97,6 +100,7 @@ export interface Interview {
   setup: InterviewSetup;
   title: string;
   status: 'in-progress' | 'completed' | 'cancelled' | 'pending' | string;
+  interview_mode: InterviewMode;
   startedAt: string;
   completedAt?: string;
   questions: Question[];
