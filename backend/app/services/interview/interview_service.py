@@ -9,7 +9,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import get_settings
 from app.exception import CustomException
-from app.models.interview import Interview as InterviewModel, InterviewStatus
+from app.models.interview import (
+    Interview as InterviewModel,
+    InterviewMode as InterviewModeModel,
+    InterviewStatus,
+)
 from app.models.interview_answer import InterviewAnswer
 from app.models.interview_question import InterviewQuestion, QuestionType
 from app.models.interview_result import InterviewResult as InterviewResultModel
@@ -272,6 +276,21 @@ class Interview:
         self, user_id: uuid.UUID, interview_id: uuid.UUID
     ) -> InterviewResponse:
         interview = await self._get_owned_interview(user_id, interview_id)
+        return InterviewResponse.model_validate(interview)
+
+    async def update_interview_mode(
+        self,
+        user_id: uuid.UUID,
+        interview_id: uuid.UUID,
+        mode: InterviewModeModel,
+    ) -> InterviewResponse:
+        interview = await self._get_owned_interview(user_id, interview_id)
+        if interview.status == InterviewStatus.COMPLETED:
+            raise CustomException(
+                400, "Cannot change the mode of a completed interview"
+            )
+        interview.interview_mode = mode
+        interview = await self._query.save(interview)
         return InterviewResponse.model_validate(interview)
 
     async def submit_answer(

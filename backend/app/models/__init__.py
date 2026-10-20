@@ -1,7 +1,7 @@
 from sqlmodel import SQLModel
 
 from .base import created_at_field, updated_at_field
-from .interview import Interview, InterviewStatus
+from .interview import Interview, InterviewMode, InterviewStatus
 from .interview_answer import InterviewAnswer
 from .interview_question import InterviewQuestion, QuestionType
 from .interview_result import InterviewResult
@@ -20,6 +20,7 @@ __all__ = [
     "ResumeJobMatch",
     "Interview",
     "InterviewStatus",
+    "InterviewMode",
     "InterviewQuestion",
     "QuestionType",
     "InterviewAnswer",

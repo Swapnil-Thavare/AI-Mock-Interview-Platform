@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.interview import Interview
+from app.models.interview import Interview, InterviewMode
 from app.models.interview_answer import InterviewAnswer
 from app.models.interview_question import InterviewQuestion
 from app.schemas.interview import InterviewCreate
@@ -35,6 +35,7 @@ class InterviewQuery:
             question_count=obj.question_count,
             duration=obj.duration,
             question_types=obj.question_types or ["technical"],
+            interview_mode=InterviewMode(obj.interview_mode.value),
         )
         self._db.add(interview)
         await self._db.commit()

@@ -17,6 +17,12 @@ class QuestionType(str, Enum):
     BEHAVIORAL = "behavioral"
 
 
+class InterviewMode(str, Enum):
+    TEXT = "TEXT"
+    AUDIO = "AUDIO"
+    VIDEO = "VIDEO"
+
+
 class InterviewQuestion(BaseModel):
     id: Optional[UUID] = None
     interview_id: Optional[UUID] = None
@@ -88,7 +94,13 @@ class Interview(BaseModel):
     title: str = "Untitled Interview"
     questions: List[InterviewQuestion] = []
     status: InterviewStatus = InterviewStatus.PENDING
+    interview_mode: InterviewMode = InterviewMode.TEXT
     completed_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InterviewModeUpdate(BaseModel):
+    interview_mode: InterviewMode
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -124,6 +136,7 @@ class InterviewCreate(BaseModel):
     question_count: int = Field(default=5, ge=1, le=20)
     duration: int = Field(default=30, ge=1, le=180)
     question_types: List[str] = ["technical", "behavioral"]
+    interview_mode: InterviewMode = InterviewMode.TEXT
 
 
 class InterviewResponse(BaseModel):
@@ -137,6 +150,7 @@ class InterviewResponse(BaseModel):
     duration: int
     question_types: List[str] = []
     status: InterviewStatus
+    interview_mode: InterviewMode = InterviewMode.TEXT
     completed_at: Optional[datetime] = None
     questions: List[InterviewQuestionResponse] = []
     answers: List[InterviewAnswerResponse] = []
