@@ -1,7 +1,7 @@
 import uuid
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.security import get_current_user
@@ -10,6 +10,7 @@ from app.models.interview import InterviewMode as InterviewModeModel
 from app.models.user import User
 from app.schemas import (
     InterviewAnswer,
+    InterviewAnswerMediaResponse,
     InterviewCreate,
     InterviewModeUpdate,
     InterviewResponse,
@@ -72,6 +73,23 @@ async def submit_answer(
 ):
     return await Interview(db).submit_answer(
         current_user.id, interview_id, answer
+    )
+
+
+@router.post(
+    "/{interview_id}/answers/{answer_id}/media",
+    response_model=InterviewAnswerMediaResponse,
+)
+async def upload_answer_media(
+    interview_id: uuid.UUID,
+    answer_id: uuid.UUID,
+    file: UploadFile = File(...),
+    duration_seconds: Optional[float] = Form(None),
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).upload_answer_media(
+        current_user.id, interview_id, answer_id, file, duration_seconds
     )
 
 

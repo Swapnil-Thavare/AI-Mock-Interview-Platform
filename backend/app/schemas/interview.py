@@ -23,6 +23,17 @@ class InterviewMode(str, Enum):
     VIDEO = "VIDEO"
 
 
+class MediaKind(str, Enum):
+    AUDIO = "AUDIO"
+    VIDEO = "VIDEO"
+
+
+class MediaUploadStatus(str, Enum):
+    PENDING = "PENDING"
+    UPLOADED = "UPLOADED"
+    FAILED = "FAILED"
+
+
 class InterviewQuestion(BaseModel):
     id: Optional[UUID] = None
     interview_id: Optional[UUID] = None
@@ -110,6 +121,21 @@ class InterviewQuestionResponse(InterviewQuestion):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InterviewAnswerMediaResponse(BaseModel):
+    id: UUID
+    interview_id: UUID
+    answer_id: UUID
+    media_type: MediaKind
+    mime_type: str
+    storage_key: str
+    file_size: int
+    duration_seconds: Optional[float] = None
+    status: MediaUploadStatus
+    uploaded_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InterviewAnswerResponse(BaseModel):
     id: UUID
     interview_id: UUID
@@ -118,6 +144,7 @@ class InterviewAnswerResponse(BaseModel):
     score: Optional[float] = None
     evaluation: Optional[Dict[str, Any]] = None
     evaluated_at: Optional[datetime] = None
+    media: Optional[InterviewAnswerMediaResponse] = None
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
