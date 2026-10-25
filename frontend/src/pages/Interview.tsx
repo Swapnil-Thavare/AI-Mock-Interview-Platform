@@ -1,9 +1,13 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { QuestionCard } from '@/components/interview/QuestionCard';
 import { Timer } from '@/components/interview/Timer';
 import { InterviewDeviceCheck } from '@/components/interview/InterviewDeviceCheck';
+import {
+  useInterviewRecording,
+  type RecordedMedia,
+} from '@/components/interview/useInterviewRecording';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Textarea';
@@ -30,6 +34,14 @@ export const Interview: React.FC = () => {
   const [evaluation, setEvaluation] = useState<AnswerEvaluation | null>(null);
   const [activeMode, setActiveMode] = useState<InterviewMode>('TEXT');
   const [devicesReady, setDevicesReady] = useState(false);
+  const recording = useInterviewRecording(activeMode);
+  const [mediaUpload, setMediaUpload] = useState<
+    'idle' | 'uploading' | 'uploaded' | 'failed'
+  >('idle');
+  const pendingUploadRef = useRef<{
+    answerId: string;
+    media: RecordedMedia;
+  } | null>(null);
 
   const loadInterview = useCallback(async (id: string) => {
     try {
@@ -72,6 +84,30 @@ export const Interview: React.FC = () => {
     };
   }, [navigate, loadInterview]);
 
+  // Acquire the interview media stream only after the device check has
+  // passed — browser permission is already granted by that point.
+  useEffect(() => {
+    if (devicesReady && activeMode !== 'TEXT') {
+      void recording.arm();
+    }
+  }, [devicesReady, activeMode, recording.arm]);
+
+  // Record one clip per question. The cleanup discards the in-progress
+  // recorder whenever the question changes or the component unmounts.
+  const shouldRecord = devicesReady && activeMode !== 'TEXT' && !!current;
+  useEffect(() => {
+    if (!shouldRecord || !recording.armed || !recording.supported) return;
+    recording.start();
+    return () => recording.discard();
+  }, [
+    current?.id,
+    shouldRecord,
+    recording.armed,
+    recording.supported,
+    recording.start,
+    recording.discard,
+  ]);
+
   const total = interview?.questions.length ?? 0;
   const answeredCount = interview?.answers.length ?? 0;
   const progress = total ? ((answeredCount + (submitting ? 1 : 0)) / total) * 100 : 0;
@@ -96,6 +132,14 @@ export const Interview: React.FC = () => {
         timeTaken: QUESTION_TIME,
         submittedAt: new Date().toISOString(),
       });
+
+      // The answer is already persisted; uploading its recording is a
+      // separate, best-effort step with a visible status and retry.
+      const answerId = response.answer?.id;
+      if (activeMode !== 'TEXT' && answerId) {
+        const media = await recording.stopAndCollect();
+        if (media) await uploadRecording(answerId, media);
+      }
 
       setEvaluation(response.evaluation ?? null);
       const updated = await interviewService.getById(interviewId);
@@ -145,6 +189,29 @@ export const Interview: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const uploadRecording = async (answerId: string, media: RecordedMedia) => {
+    if (!interviewId) return;
+    setMediaUpload('uploading');
+    try {
+      await interviewService.uploadAnswerMedia(
+        interviewId,
+        answerId,
+        media.blob,
+        media.durationSeconds
+      );
+      setMediaUpload('uploaded');
+      pendingUploadRef.current = null;
+    } catch {
+      setMediaUpload('failed');
+      pendingUploadRef.current = { answerId, media };
+    }
+  };
+
+  const retryMediaUpload = async () => {
+    const pending = pendingUploadRef.current;
+    if (pending) await uploadRecording(pending.answerId, pending.media);
   };
 
   const handleModeSwitch = async (mode: InterviewMode) => {
@@ -222,6 +289,18 @@ export const Interview: React.FC = () => {
               {interview.interview_mode === 'VIDEO' ? 'Video' : 'Audio'}
             </Badge>
           )}
+          {recording.state === 'recording' && (
+            <Badge color="red">
+              <span
+                className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600"
+                aria-hidden="true"
+              />
+              Recording
+            </Badge>
+          )}
+          {recording.state === 'error' && (
+            <Badge color="red">Recording stopped</Badge>
+          )}
         </div>
         <Timer
           key={current.id}
@@ -265,6 +344,29 @@ export const Interview: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {activeMode !== 'TEXT' && mediaUpload !== 'idle' && (
+        <div className="mt-3 text-sm" role="status">
+          {mediaUpload === 'uploading' && (
+            <span className="text-gray-600">Uploading recording...</span>
+          )}
+          {mediaUpload === 'uploaded' && (
+            <span className="text-green-700">Recording saved.</span>
+          )}
+          {mediaUpload === 'failed' && (
+            <span className="text-red-600">
+              Recording upload failed — your answer was saved.{' '}
+              <button
+                type="button"
+                className="font-medium underline"
+                onClick={() => void retryMediaUpload()}
+              >
+                Retry upload
+              </button>
+            </span>
+          )}
+        </div>
+      )}
 
       {submitting && (
         <div className="mt-4 text-sm text-gray-600">AI is evaluating your answer...</div>

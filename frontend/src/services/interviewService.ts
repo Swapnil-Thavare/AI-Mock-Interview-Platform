@@ -5,6 +5,7 @@ import type {
   InterviewSetup,
   Question,
   Answer,
+  AnswerMedia,
   InterviewResult,
   AnswerEvaluation,
   SubmitAnswerResponse,
@@ -115,6 +116,18 @@ const normalizeInterview = (data: Record<string, unknown>, setup?: InterviewSetu
   result: data.result ? normalizeResult(data.result as Record<string, unknown>) : undefined,
 });
 
+const normalizeAnswer = (data: Record<string, unknown>): Answer => ({
+  id: data.id ? String(data.id) : undefined,
+  questionId: String(data.question_id ?? data.questionId ?? ''),
+  question_id: data.question_id ? String(data.question_id) : undefined,
+  text: (data.answer_text as string) ?? (data.text as string) ?? '',
+  answer_text: (data.answer_text as string) ?? (data.text as string) ?? undefined,
+  skipped: Boolean(data.skipped),
+  timeTaken: (data.timeTaken as number) ?? 0,
+  submittedAt:
+    (data.created_at as string) ?? (data.submittedAt as string) ?? '',
+});
+
 const questionTypesFromSetup = (setup: InterviewSetup): string[] => {
   if (setup.question_types && setup.question_types.length) return setup.question_types;
   if (setup.type === 'technical') return ['technical'];
@@ -151,6 +164,24 @@ export const interviewService = {
     return normalizeInterview(data as Record<string, unknown>);
   },
 
+  uploadAnswerMedia: async (
+    interviewId: string,
+    answerId: string,
+    blob: Blob,
+    durationSeconds?: number
+  ): Promise<AnswerMedia> => {
+    const form = new FormData();
+    form.append('file', blob, 'recording');
+    if (durationSeconds !== undefined) {
+      form.append('duration_seconds', String(Math.round(durationSeconds * 100) / 100));
+    }
+    const { data } = await api.post(
+      `/interviews/${interviewId}/answers/${answerId}/media`,
+      form
+    );
+    return data as AnswerMedia;
+  },
+
   getById: async (id: string): Promise<Interview> => {
     const key = cacheKey(id);
     const pending = getByIdInFlight.get(key);
@@ -185,7 +216,7 @@ export const interviewService = {
     });
     const raw = (data ?? {}) as Record<string, unknown>;
     return {
-      answer: raw.answer as Answer,
+      answer: normalizeAnswer((raw.answer ?? {}) as Record<string, unknown>),
       evaluation: raw.evaluation ? normalizeEvaluation(raw.evaluation as Record<string, unknown>) : undefined,
       next_question: raw.next_question
         ? normalizeQuestion(raw.next_question as Record<string, unknown>)
