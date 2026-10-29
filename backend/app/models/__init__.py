@@ -1,8 +1,13 @@
 from sqlmodel import SQLModel
 
 from .base import created_at_field, updated_at_field
-from .interview import Interview, InterviewStatus
+from .interview import Interview, InterviewMode, InterviewStatus
 from .interview_answer import InterviewAnswer
+from .interview_answer_media import (
+    InterviewAnswerMedia,
+    MediaKind,
+    MediaUploadStatus,
+)
 from .interview_question import InterviewQuestion, QuestionType
 from .interview_result import InterviewResult
 from .job_description import JobDescription
@@ -20,8 +25,12 @@ __all__ = [
     "ResumeJobMatch",
     "Interview",
     "InterviewStatus",
+    "InterviewMode",
     "InterviewQuestion",
     "QuestionType",
     "InterviewAnswer",
+    "InterviewAnswerMedia",
+    "MediaKind",
+    "MediaUploadStatus",
     "InterviewResult",
 ]

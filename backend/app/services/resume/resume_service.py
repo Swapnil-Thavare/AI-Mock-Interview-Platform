@@ -1,12 +1,10 @@
 import os
 import uuid
-from functools import lru_cache
 from typing import List
 
 import anyio
 from fastapi import UploadFile
 from sqlmodel.ext.asyncio.session import AsyncSession
-from supabase import Client, create_client
 
 from app.core.config import get_settings
 from app.exception import CustomException
@@ -14,6 +12,10 @@ from app.schemas.resume import ResumeCreate, ResumeResponse
 from app.services.ai.ai_service import AIService
 from app.services.resume.pdf_extractor import extract_text_from_pdf
 from app.services.resume.resume_query import ResumeQuery
+from app.services.storage.storage_service import (
+    get_supabase_client,
+    supabase_configured,
+)
 
 UPLOAD_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
@@ -24,17 +26,6 @@ UPLOAD_DIR = os.path.join(
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
-@lru_cache
-def _get_supabase_client() -> Client:
-    settings = get_settings()
-    return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
-
-
-def _supabase_configured() -> bool:
-    settings = get_settings()
-    return bool(settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY)
-
-
 def _upload_resume_file(storage_path: str, content: bytes) -> str:
     """Store a resume PDF and return the reference to persist in resumes.file_path.
 
@@ -43,7 +34,7 @@ def _upload_resume_file(storage_path: str, content: bytes) -> str:
     silently degrade and returns 503 instead.
     """
     settings = get_settings()
-    if not _supabase_configured():
+    if not supabase_configured():
         if settings.ENVIRONMENT.lower() == "production":
             raise CustomException(503, "Resume storage is not configured.")
         os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -52,7 +43,7 @@ def _upload_resume_file(storage_path: str, content: bytes) -> str:
             f.write(content)
         return local_path
     try:
-        _get_supabase_client().storage.from_(settings.SUPABASE_STORAGE_BUCKET).upload(
+        get_supabase_client().storage.from_(settings.SUPABASE_STORAGE_BUCKET).upload(
             path=storage_path,
             file=content,
             file_options={"content-type": "application/pdf"},

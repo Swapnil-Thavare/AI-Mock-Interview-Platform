@@ -9,6 +9,7 @@ from app.models.base import created_at_field, updated_at_field
 
 if TYPE_CHECKING:
     from app.models.interview import Interview
+    from app.models.interview_answer_media import InterviewAnswerMedia
     from app.models.interview_question import InterviewQuestion
 
 
@@ -64,3 +65,11 @@ class InterviewAnswer(SQLModel, table=True):
 
     interview: "Interview" = Relationship(back_populates="answers")
     question: "InterviewQuestion" = Relationship(back_populates="answers")
+    media: Optional["InterviewAnswerMedia"] = Relationship(
+        back_populates="answer",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "lazy": "selectin",
+            "uselist": False,
+        },
+    )

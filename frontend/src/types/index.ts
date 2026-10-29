@@ -80,6 +80,8 @@ export interface JobDescription {
   createdAt?: string;
 }
 
+export type InterviewMode = 'TEXT' | 'AUDIO' | 'VIDEO';
+
 export interface InterviewSetup {
   resumeId: string;
   jobDescriptionId: string;
@@ -88,6 +90,7 @@ export interface InterviewSetup {
   type: 'technical' | 'behavioral' | 'mixed';
   question_types?: string[];
   duration: number;
+  interviewMode: InterviewMode;
 }
 
 export interface Interview {
@@ -97,6 +100,7 @@ export interface Interview {
   setup: InterviewSetup;
   title: string;
   status: 'in-progress' | 'completed' | 'cancelled' | 'pending' | string;
+  interview_mode: InterviewMode;
   startedAt: string;
   completedAt?: string;
   questions: Question[];
@@ -120,6 +124,7 @@ export interface Question {
 }
 
 export interface Answer {
+  id?: string;
   questionId: string;
   question_id?: string;
   text: string;
@@ -127,6 +132,19 @@ export interface Answer {
   skipped: boolean;
   timeTaken: number;
   submittedAt: string;
+}
+
+export interface AnswerMedia {
+  id: string;
+  interview_id: string;
+  answer_id: string;
+  media_type: 'AUDIO' | 'VIDEO';
+  mime_type: string;
+  storage_key: string;
+  file_size: number;
+  duration_seconds?: number | null;
+  status: 'PENDING' | 'UPLOADED' | 'FAILED';
+  uploaded_at?: string | null;
 }
 
 export interface AnswerEvaluation {

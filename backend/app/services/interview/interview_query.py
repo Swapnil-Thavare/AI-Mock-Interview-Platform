@@ -5,8 +5,9 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.interview import Interview
+from app.models.interview import Interview, InterviewMode
 from app.models.interview_answer import InterviewAnswer
+from app.models.interview_answer_media import InterviewAnswerMedia
 from app.models.interview_question import InterviewQuestion
 from app.schemas.interview import InterviewCreate
 
@@ -19,7 +20,7 @@ class InterviewQuery:
     def _with_relationships(stmt):
         return stmt.options(
             selectinload(Interview.questions),
-            selectinload(Interview.answers),
+            selectinload(Interview.answers).selectinload(InterviewAnswer.media),
             selectinload(Interview.result),
         )
 
@@ -35,6 +36,7 @@ class InterviewQuery:
             question_count=obj.question_count,
             duration=obj.duration,
             question_types=obj.question_types or ["technical"],
+            interview_mode=InterviewMode(obj.interview_mode.value),
         )
         self._db.add(interview)
         await self._db.commit()
@@ -84,3 +86,34 @@ class InterviewQuery:
         )
         result = await self._db.exec(stmt)
         return result.first()
+
+    async def get_answer_by_id(
+        self, answer_id: uuid.UUID
+    ) -> Optional[InterviewAnswer]:
+        if isinstance(answer_id, str):
+            answer_id = uuid.UUID(answer_id)
+        stmt = (
+            select(InterviewAnswer)
+            .where(InterviewAnswer.id == answer_id)
+            .options(selectinload(InterviewAnswer.media))
+        )
+        result = await self._db.exec(stmt)
+        return result.first()
+
+    async def get_media_for_answer(
+        self, answer_id: uuid.UUID
+    ) -> Optional[InterviewAnswerMedia]:
+        stmt = (
+            select(InterviewAnswerMedia)
+            .where(InterviewAnswerMedia.answer_id == answer_id)
+        )
+        result = await self._db.exec(stmt)
+        return result.first()
+
+    async def save_media(
+        self, media: InterviewAnswerMedia
+    ) -> InterviewAnswerMedia:
+        self._db.add(media)
+        await self._db.commit()
+        await self._db.refresh(media)
+        return media

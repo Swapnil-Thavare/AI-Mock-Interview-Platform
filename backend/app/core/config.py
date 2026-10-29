@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_STORAGE_BUCKET: str = "resumes"
 
+    # Interview media (separate private bucket, per-answer recordings)
+    SUPABASE_MEDIA_BUCKET: str = "interview-media"
+    INTERVIEW_MEDIA_MAX_MB: int = 25
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

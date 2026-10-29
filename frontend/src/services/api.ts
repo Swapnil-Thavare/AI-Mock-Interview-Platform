@@ -14,6 +14,12 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  // Let the browser set the multipart boundary for file uploads.
+  if (config.data instanceof FormData) {
+    (config.headers as any).delete('Content-Type');
+  }
+
   return config;
 });
 

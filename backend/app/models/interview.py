@@ -15,6 +15,12 @@ class InterviewStatus(str, enum.Enum):
     COMPLETED = "completed"
 
 
+class InterviewMode(str, enum.Enum):
+    TEXT = "TEXT"
+    AUDIO = "AUDIO"
+    VIDEO = "VIDEO"
+
+
 class Interview(SQLModel, table=True):
     __tablename__ = "interviews"
 
@@ -80,6 +86,18 @@ class Interview(SQLModel, table=True):
             ),
             nullable=False,
             server_default=sa.text("'PENDING'"),
+        ),
+    )
+    interview_mode: InterviewMode = Field(
+        default=InterviewMode.TEXT,
+        sa_column=sa.Column(
+            sa.Enum(
+                InterviewMode,
+                name="interview_mode",
+                create_type=False,
+            ),
+            nullable=False,
+            server_default=sa.text("'TEXT'"),
         ),
     )
     completed_at: Optional[datetime] = Field(

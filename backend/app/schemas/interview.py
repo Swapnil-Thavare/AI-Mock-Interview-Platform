@@ -17,6 +17,23 @@ class QuestionType(str, Enum):
     BEHAVIORAL = "behavioral"
 
 
+class InterviewMode(str, Enum):
+    TEXT = "TEXT"
+    AUDIO = "AUDIO"
+    VIDEO = "VIDEO"
+
+
+class MediaKind(str, Enum):
+    AUDIO = "AUDIO"
+    VIDEO = "VIDEO"
+
+
+class MediaUploadStatus(str, Enum):
+    PENDING = "PENDING"
+    UPLOADED = "UPLOADED"
+    FAILED = "FAILED"
+
+
 class InterviewQuestion(BaseModel):
     id: Optional[UUID] = None
     interview_id: Optional[UUID] = None
@@ -88,13 +105,34 @@ class Interview(BaseModel):
     title: str = "Untitled Interview"
     questions: List[InterviewQuestion] = []
     status: InterviewStatus = InterviewStatus.PENDING
+    interview_mode: InterviewMode = InterviewMode.TEXT
     completed_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InterviewModeUpdate(BaseModel):
+    interview_mode: InterviewMode
     model_config = ConfigDict(from_attributes=True)
 
 
 class InterviewQuestionResponse(InterviewQuestion):
     id: UUID
     interview_id: UUID
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InterviewAnswerMediaResponse(BaseModel):
+    id: UUID
+    interview_id: UUID
+    answer_id: UUID
+    media_type: MediaKind
+    mime_type: str
+    storage_key: str
+    file_size: int
+    duration_seconds: Optional[float] = None
+    status: MediaUploadStatus
+    uploaded_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -106,6 +144,7 @@ class InterviewAnswerResponse(BaseModel):
     score: Optional[float] = None
     evaluation: Optional[Dict[str, Any]] = None
     evaluated_at: Optional[datetime] = None
+    media: Optional[InterviewAnswerMediaResponse] = None
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -124,6 +163,7 @@ class InterviewCreate(BaseModel):
     question_count: int = Field(default=5, ge=1, le=20)
     duration: int = Field(default=30, ge=1, le=180)
     question_types: List[str] = ["technical", "behavioral"]
+    interview_mode: InterviewMode = InterviewMode.TEXT
 
 
 class InterviewResponse(BaseModel):
@@ -137,6 +177,7 @@ class InterviewResponse(BaseModel):
     duration: int
     question_types: List[str] = []
     status: InterviewStatus
+    interview_mode: InterviewMode = InterviewMode.TEXT
     completed_at: Optional[datetime] = None
     questions: List[InterviewQuestionResponse] = []
     answers: List[InterviewAnswerResponse] = []

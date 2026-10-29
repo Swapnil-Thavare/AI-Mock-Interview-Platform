@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import uuid
 
+import anyio
+from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -9,13 +11,23 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import get_settings
 from app.exception import CustomException
-from app.models.interview import Interview as InterviewModel, InterviewStatus
+from app.models.interview import (
+    Interview as InterviewModel,
+    InterviewMode as InterviewModeModel,
+    InterviewStatus,
+)
 from app.models.interview_answer import InterviewAnswer
+from app.models.interview_answer_media import (
+    InterviewAnswerMedia as InterviewAnswerMediaModel,
+    MediaKind,
+    MediaUploadStatus,
+)
 from app.models.interview_question import InterviewQuestion, QuestionType
 from app.models.interview_result import InterviewResult as InterviewResultModel
 from app.schemas.interview import (
     InterviewAnswer as InterviewAnswerSchema,
     InterviewAnswerEvaluation,
+    InterviewAnswerMediaResponse,
     InterviewAnswerResponse,
     InterviewCreate,
     InterviewQuestionResponse,
@@ -29,9 +41,34 @@ from app.services.interview.interview_query import InterviewQuery
 from app.services.job.job_query import JobDescriptionQuery
 from app.services.match.match_query import MatchQuery
 from app.services.resume.resume_query import ResumeQuery
+from app.services.storage.storage_service import upload_media_file
 
 
 _MAX_ANSWER_LENGTH = 20000
+
+_ALLOWED_MEDIA_MIME_TYPES = {
+    "audio/webm",
+    "audio/ogg",
+    "audio/mp4",
+    "audio/mpeg",
+    "audio/x-m4a",
+    "video/webm",
+    "video/mp4",
+    "video/quicktime",
+    "video/x-matroska",
+}
+
+_MEDIA_EXTENSIONS = {
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+    "audio/mp4": "m4a",
+    "audio/mpeg": "mp3",
+    "audio/x-m4a": "m4a",
+    "video/webm": "webm",
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "video/x-matroska": "mkv",
+}
 
 
 class Interview:
@@ -274,6 +311,21 @@ class Interview:
         interview = await self._get_owned_interview(user_id, interview_id)
         return InterviewResponse.model_validate(interview)
 
+    async def update_interview_mode(
+        self,
+        user_id: uuid.UUID,
+        interview_id: uuid.UUID,
+        mode: InterviewModeModel,
+    ) -> InterviewResponse:
+        interview = await self._get_owned_interview(user_id, interview_id)
+        if interview.status == InterviewStatus.COMPLETED:
+            raise CustomException(
+                400, "Cannot change the mode of a completed interview"
+            )
+        interview.interview_mode = mode
+        interview = await self._query.save(interview)
+        return InterviewResponse.model_validate(interview)
+
     async def submit_answer(
         self,
         user_id: uuid.UUID,
@@ -309,6 +361,7 @@ class Interview:
             question_id=question_id,
             answer_text=answer_text,
         )
+        db_answer.media = None
         self._db.add(db_answer)
         try:
             await self._db.commit()
@@ -362,6 +415,103 @@ class Interview:
             is_complete=is_complete,
             message="Answer submitted",
         )
+
+    async def upload_answer_media(
+        self,
+        user_id: uuid.UUID,
+        interview_id: uuid.UUID,
+        answer_id: uuid.UUID,
+        file: UploadFile,
+        duration_seconds: Optional[float] = None,
+    ) -> InterviewAnswerMediaResponse:
+        interview = await self._get_owned_interview(user_id, interview_id)
+        if interview.status == InterviewStatus.COMPLETED:
+            raise CustomException(
+                400, "Cannot upload media to a completed interview"
+            )
+        if duration_seconds is not None and duration_seconds <= 0:
+            duration_seconds = None
+        if interview.interview_mode == InterviewModeModel.TEXT:
+            raise CustomException(
+                400, "This interview does not accept recordings"
+            )
+
+        answer = await self._query.get_answer_by_id(answer_id)
+        if not answer or answer.interview_id != interview.id:
+            raise CustomException(404, "Answer not found")
+
+        raw_mime = (file.content_type or "").split(";")[0].strip().lower()
+        if raw_mime not in _ALLOWED_MEDIA_MIME_TYPES:
+            raise CustomException(415, "Unsupported recording format")
+        media_kind = (
+            MediaKind.AUDIO if raw_mime.startswith("audio/") else MediaKind.VIDEO
+        )
+        expected_kind = (
+            MediaKind.VIDEO
+            if interview.interview_mode == InterviewModeModel.VIDEO
+            else MediaKind.AUDIO
+        )
+        if media_kind != expected_kind:
+            raise CustomException(
+                400,
+                f"This interview requires a {expected_kind.value.lower()} recording",
+            )
+
+        settings = get_settings()
+        max_bytes = settings.INTERVIEW_MEDIA_MAX_MB * 1024 * 1024
+        declared = getattr(file, "size", None)
+        if declared is not None and declared > max_bytes:
+            raise CustomException(
+                413,
+                f"Recording must be {settings.INTERVIEW_MEDIA_MAX_MB} MB or smaller",
+            )
+        content = await file.read(max_bytes + 1)
+        if not content:
+            raise CustomException(400, "Recording is empty")
+        if len(content) > max_bytes:
+            raise CustomException(
+                413,
+                f"Recording must be {settings.INTERVIEW_MEDIA_MAX_MB} MB or smaller",
+            )
+
+        media = await self._query.get_media_for_answer(answer.id)
+        if media is None:
+            extension = _MEDIA_EXTENSIONS.get(raw_mime, "bin")
+            media = InterviewAnswerMediaModel(
+                answer_id=answer.id,
+                interview_id=interview.id,
+                media_type=media_kind,
+                mime_type=raw_mime,
+                storage_key=(
+                    f"interviews/{user_id}/{interview.id}/{answer.id}/"
+                    f"{uuid.uuid4()}.{extension}"
+                ),
+                file_size=len(content),
+                duration_seconds=duration_seconds,
+                status=MediaUploadStatus.PENDING,
+            )
+        else:
+            media.media_type = media_kind
+            media.mime_type = raw_mime
+            media.file_size = len(content)
+            media.duration_seconds = duration_seconds
+            media.status = MediaUploadStatus.PENDING
+
+        try:
+            await anyio.to_thread.run_sync(
+                upload_media_file, media.storage_key, content, raw_mime
+            )
+        except Exception:
+            media.status = MediaUploadStatus.FAILED
+            await self._query.save_media(media)
+            self._db.expire(answer, ["media"])
+            raise
+
+        media.status = MediaUploadStatus.UPLOADED
+        media.uploaded_at = datetime.now(timezone.utc)
+        media = await self._query.save_media(media)
+        self._db.expire(answer, ["media"])
+        return InterviewAnswerMediaResponse.model_validate(media)
 
     async def complete_interview(
         self, user_id: uuid.UUID, interview_id: uuid.UUID
