@@ -98,7 +98,7 @@ async def test_audio_media_upload_success(db_client, auth_headers, monkeypatch):
         url, files=files, data={"duration_seconds": "12.5"}, headers=auth_headers
     )
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["media"]
     assert data["answer_id"] == answer_id
     assert data["interview_id"] == interview["id"]
     assert data["media_type"] == "AUDIO"
@@ -130,7 +130,7 @@ async def test_video_media_upload_success(db_client, auth_headers, monkeypatch):
     )
     response = await db_client.post(url, files=files, headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["media_type"] == "VIDEO"
+    assert response.json()["media"]["media_type"] == "VIDEO"
 
 
 async def test_media_upload_unauthenticated(db_client, auth_headers, monkeypatch):
@@ -323,8 +323,8 @@ async def test_media_upload_storage_failure_marks_failed(
     )
     retry = await db_client.post(url, files=files, headers=auth_headers)
     assert retry.status_code == 200
-    assert retry.json()["status"] == "UPLOADED"
-    assert retry.json()["id"] == media["id"]
+    assert retry.json()["media"]["status"] == "UPLOADED"
+    assert retry.json()["media"]["id"] == media["id"]
 
 
 async def test_media_upload_retry_reuses_record(
@@ -340,7 +340,10 @@ async def test_media_upload_retry_reuses_record(
     assert first.status_code == 200
     second = await db_client.post(url, files=files, headers=auth_headers)
     assert second.status_code == 200
-    assert second.json()["id"] == first.json()["id"]
-    assert second.json()["storage_key"] == first.json()["storage_key"]
+    assert second.json()["media"]["id"] == first.json()["media"]["id"]
+    assert (
+        second.json()["media"]["storage_key"]
+        == first.json()["media"]["storage_key"]
+    )
     # Same storage object overwritten — one upload call per attempt.
     assert len(mock_media_storage) == 2

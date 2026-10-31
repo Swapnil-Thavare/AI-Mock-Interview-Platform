@@ -34,6 +34,13 @@ class MediaUploadStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class TranscriptionStatus(str, Enum):
+    NONE = "NONE"
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class InterviewQuestion(BaseModel):
     id: Optional[UUID] = None
     interview_id: Optional[UUID] = None
@@ -132,6 +139,10 @@ class InterviewAnswerMediaResponse(BaseModel):
     duration_seconds: Optional[float] = None
     status: MediaUploadStatus
     uploaded_at: Optional[datetime] = None
+    transcription_status: TranscriptionStatus = TranscriptionStatus.NONE
+    transcript_text: Optional[str] = None
+    transcription_error: Optional[str] = None
+    transcribed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -194,4 +205,21 @@ class SubmitAnswerResponse(BaseModel):
     follow_up_generated: bool = False
     is_complete: bool = False
     message: str = "Answer submitted"
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InterviewAnswerMediaSubmitResponse(BaseModel):
+    """Response contract for the media upload endpoint.
+
+    The upload endpoint finishes the voice-first pipeline (upload →
+    transcribe → evaluate → follow-up), so in addition to the media record
+    it returns the same progression data a submit-answer call would.
+    """
+    media: InterviewAnswerMediaResponse
+    answer: InterviewAnswerResponse
+    evaluation: Optional[InterviewAnswerEvaluation] = None
+    next_question: Optional[InterviewQuestionResponse] = None
+    follow_up_generated: bool = False
+    is_complete: bool = False
+    message: str = "Media uploaded"
     model_config = ConfigDict(from_attributes=True)

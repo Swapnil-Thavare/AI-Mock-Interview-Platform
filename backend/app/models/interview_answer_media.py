@@ -23,6 +23,13 @@ class MediaUploadStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 
+class TranscriptionStatus(str, enum.Enum):
+    NONE = "NONE"
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class InterviewAnswerMedia(SQLModel, table=True):
     __tablename__ = "interview_answer_media"
 
@@ -88,6 +95,30 @@ class InterviewAnswerMedia(SQLModel, table=True):
         ),
     )
     uploaded_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True),
+    )
+    transcription_status: TranscriptionStatus = Field(
+        default=TranscriptionStatus.NONE,
+        sa_column=sa.Column(
+            sa.Enum(
+                TranscriptionStatus,
+                name="transcription_status",
+                create_type=False,
+            ),
+            nullable=False,
+            server_default=sa.text("'NONE'"),
+        ),
+    )
+    transcript_text: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.Text, nullable=True),
+    )
+    transcription_error: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.String(512), nullable=True),
+    )
+    transcribed_at: Optional[datetime] = Field(
         default=None,
         sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True),
     )

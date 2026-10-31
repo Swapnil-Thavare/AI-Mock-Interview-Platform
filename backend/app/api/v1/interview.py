@@ -10,7 +10,7 @@ from app.models.interview import InterviewMode as InterviewModeModel
 from app.models.user import User
 from app.schemas import (
     InterviewAnswer,
-    InterviewAnswerMediaResponse,
+    InterviewAnswerMediaSubmitResponse,
     InterviewCreate,
     InterviewModeUpdate,
     InterviewResponse,
@@ -78,7 +78,7 @@ async def submit_answer(
 
 @router.post(
     "/{interview_id}/answers/{answer_id}/media",
-    response_model=InterviewAnswerMediaResponse,
+    response_model=InterviewAnswerMediaSubmitResponse,
 )
 async def upload_answer_media(
     interview_id: uuid.UUID,

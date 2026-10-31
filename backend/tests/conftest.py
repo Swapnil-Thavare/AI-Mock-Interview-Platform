@@ -219,6 +219,35 @@ def mock_gemini(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def mock_transcription(monkeypatch):
+    """Replace the transcription provider with a deterministic fake.
+
+    Tests can steer it via the returned class attributes:
+    FakeTranscriptionProvider.transcript / .error / .calls.
+    """
+
+    class FakeTranscriptionProvider:
+        transcript = "This is the candidate's spoken answer."
+        error = None
+        calls = []
+
+        async def transcribe(self, content, mime_type):
+            FakeTranscriptionProvider.calls.append(mime_type)
+            if FakeTranscriptionProvider.error is not None:
+                raise FakeTranscriptionProvider.error
+            return FakeTranscriptionProvider.transcript
+
+    monkeypatch.setattr(
+        "app.services.ai.transcription_provider.GeminiTranscriptionProvider",
+        FakeTranscriptionProvider,
+    )
+    yield FakeTranscriptionProvider
+    FakeTranscriptionProvider.transcript = "This is the candidate's spoken answer."
+    FakeTranscriptionProvider.error = None
+    FakeTranscriptionProvider.calls = []
+
+
+@pytest.fixture(autouse=True)
 def mock_resume_storage(monkeypatch):
     """Resume PDFs must never hit real Supabase Storage in tests."""
     monkeypatch.setattr(

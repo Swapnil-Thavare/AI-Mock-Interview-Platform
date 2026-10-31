@@ -21,6 +21,7 @@ from app.models.interview_answer_media import (
     InterviewAnswerMedia as InterviewAnswerMediaModel,
     MediaKind,
     MediaUploadStatus,
+    TranscriptionStatus,
 )
 from app.models.interview_question import InterviewQuestion, QuestionType
 from app.models.interview_result import InterviewResult as InterviewResultModel
@@ -28,6 +29,7 @@ from app.schemas.interview import (
     InterviewAnswer as InterviewAnswerSchema,
     InterviewAnswerEvaluation,
     InterviewAnswerMediaResponse,
+    InterviewAnswerMediaSubmitResponse,
     InterviewAnswerResponse,
     InterviewCreate,
     InterviewQuestionResponse,
@@ -37,6 +39,7 @@ from app.schemas.interview import (
     SubmitAnswerResponse,
 )
 from app.services.ai.ai_service import AIService
+from app.services.ai.transcription_provider import default_transcription_provider
 from app.services.interview.interview_query import InterviewQuery
 from app.services.job.job_query import JobDescriptionQuery
 from app.services.match.match_query import MatchQuery
@@ -76,6 +79,7 @@ class Interview:
         self._db = db
         self._query = InterviewQuery(db)
         self._ai = AIService()
+        self._transcription = default_transcription_provider()
 
     async def _ensure_resume_analysis(self, resume) -> dict:
         if resume.analysis:
@@ -233,6 +237,89 @@ class Interview:
         await self._db.refresh(follow_up_question)
         return follow_up_question
 
+    async def _evaluate_and_follow_up(
+        self,
+        interview: InterviewModel,
+        question: InterviewQuestion,
+        answer: InterviewAnswer,
+    ) -> tuple[Optional[InterviewAnswerEvaluation], bool]:
+        """Evaluate answer.answer_text, persist the result, and maybe
+        generate an adaptive follow-up question.
+
+        Shared by the text submission path and the voice-first media path.
+        Evaluation failures leave the answer intact and return (None, False).
+        """
+        evaluation_schema: Optional[InterviewAnswerEvaluation] = None
+        try:
+            evaluation_schema = await self._evaluate_answer(
+                interview, question, answer
+            )
+            if evaluation_schema:
+                answer.score = float(evaluation_schema.score)
+                answer.evaluation = evaluation_schema.model_dump(mode="json")
+                answer.evaluated_at = datetime.now(timezone.utc)
+                self._db.add(answer)
+                await self._db.commit()
+                await self._db.refresh(answer)
+        except CustomException:
+            pass
+
+        follow_up_generated = False
+        if evaluation_schema and evaluation_schema.follow_up_required:
+            follow_up_count = await self._count_follow_ups(interview)
+            max_follow_ups = max(0, get_settings().MAX_FOLLOW_UP_QUESTIONS)
+            if follow_up_count < max_follow_ups:
+                follow_up = await self._generate_follow_up(
+                    interview, question, answer, evaluation_schema
+                )
+                if follow_up:
+                    follow_up_generated = True
+        return evaluation_schema, follow_up_generated
+
+    async def _transcribe_media(
+        self,
+        media: InterviewAnswerMediaModel,
+        content: bytes,
+        mime_type: str,
+    ) -> InterviewAnswerMediaModel:
+        """Transcribe recording bytes and persist the result on the media row.
+
+        Raises a sanitized CustomException on failure; the media record keeps
+        a FAILED status so the client can retry without losing the upload.
+        """
+        media.transcription_status = TranscriptionStatus.PENDING
+        media.transcription_error = None
+        media = await self._query.save_media(media)
+        try:
+            transcript = (
+                await self._transcription.transcribe(content, mime_type)
+            ).strip()
+        except CustomException as exc:
+            media.transcription_status = TranscriptionStatus.FAILED
+            media.transcription_error = str(exc.message)[:512]
+            await self._query.save_media(media)
+            raise
+        except Exception as exc:
+            media.transcription_status = TranscriptionStatus.FAILED
+            media.transcription_error = type(exc).__name__[:512]
+            await self._query.save_media(media)
+            raise CustomException(
+                502, "Transcription failed unexpectedly."
+            ) from exc
+        if not transcript:
+            media.transcription_status = TranscriptionStatus.FAILED
+            media.transcription_error = "No intelligible speech detected."
+            await self._query.save_media(media)
+            raise CustomException(
+                422,
+                "The recording could not be transcribed — no speech was "
+                "detected. Please retry with a clearer recording.",
+            )
+        media.transcript_text = transcript
+        media.transcription_status = TranscriptionStatus.COMPLETED
+        media.transcribed_at = datetime.now(timezone.utc)
+        return await self._query.save_media(media)
+
     async def create_interview(
         self, user_id: uuid.UUID, payload: InterviewCreate
     ) -> InterviewResponse:
@@ -350,7 +437,14 @@ class Interview:
             raise CustomException(400, "Answer already submitted for this question")
 
         answer_text = answer.answer_text.strip()
-        if not answer_text and not answer.skipped:
+        # AUDIO/VIDEO answers may arrive as an empty placeholder — the spoken
+        # answer is transcribed later via the media upload endpoint.
+        voice_placeholder = (
+            not answer_text
+            and not answer.skipped
+            and interview.interview_mode != InterviewModeModel.TEXT
+        )
+        if not answer_text and not answer.skipped and not voice_placeholder:
             raise CustomException(400, "Answer cannot be empty")
         if len(answer.answer_text) > _MAX_ANSWER_LENGTH:
             raise CustomException(400, "Answer exceeds maximum length")
@@ -372,36 +466,19 @@ class Interview:
             )
         await self._db.refresh(db_answer)
 
+        # Empty voice placeholders are evaluated after transcription in
+        # upload_answer_media — never evaluate a placeholder.
         evaluation_schema: Optional[InterviewAnswerEvaluation] = None
-        try:
-            evaluation_schema = await self._evaluate_answer(
+        follow_up_generated = False
+        if not voice_placeholder:
+            (
+                evaluation_schema,
+                follow_up_generated,
+            ) = await self._evaluate_and_follow_up(
                 interview, question, db_answer
             )
-            if evaluation_schema:
-                db_answer.score = float(evaluation_schema.score)
-                db_answer.evaluation = evaluation_schema.model_dump(mode="json")
-                db_answer.evaluated_at = datetime.now(timezone.utc)
-                self._db.add(db_answer)
-                await self._db.commit()
-                await self._db.refresh(db_answer)
-        except CustomException:
-            pass
 
-        follow_up_generated = False
-        if evaluation_schema and evaluation_schema.follow_up_required:
-            follow_up_count = await self._count_follow_ups(interview)
-            settings = get_settings()
-            max_follow_ups = max(0, settings.MAX_FOLLOW_UP_QUESTIONS)
-            if follow_up_count < max_follow_ups:
-                follow_up = await self._generate_follow_up(
-                    interview, question, db_answer, evaluation_schema
-                )
-                if follow_up:
-                    follow_up_generated = True
-                    interview = await self._query.get_by_id(interview.id)
-
-        if not follow_up_generated:
-            await self._db.refresh(interview)
+        await self._db.refresh(interview)
         next_q = await self._get_next_question(interview)
         is_complete = next_q is None and not follow_up_generated
 
@@ -510,8 +587,67 @@ class Interview:
         media.status = MediaUploadStatus.UPLOADED
         media.uploaded_at = datetime.now(timezone.utc)
         media = await self._query.save_media(media)
-        self._db.expire(answer, ["media"])
-        return InterviewAnswerMediaResponse.model_validate(media)
+
+        # Voice-first pipeline: transcribe the just-uploaded bytes (no
+        # storage round-trip), then evaluate the transcript exactly like a
+        # typed answer. Retries skip a completed transcription and an
+        # existing evaluation so nothing is duplicated.
+        if media.transcription_status != TranscriptionStatus.COMPLETED:
+            try:
+                media = await self._transcribe_media(
+                    media, content, raw_mime
+                )
+            except Exception:
+                # Keep the failure state visible to later reads in this
+                # session — same identity-map behavior as upload failure.
+                self._db.expire(answer, ["media"])
+                raise
+
+        if (
+            media.transcription_status == TranscriptionStatus.COMPLETED
+            and media.transcript_text
+        ):
+            answer.answer_text = media.transcript_text
+            self._db.add(answer)
+            await self._db.commit()
+            await self._db.refresh(answer)
+
+        question = next(
+            (q for q in interview.questions if q.id == answer.question_id),
+            None,
+        )
+        evaluation_schema: Optional[InterviewAnswerEvaluation] = None
+        follow_up_generated = False
+        if answer.evaluation:
+            evaluation_schema = InterviewAnswerEvaluation.model_validate(
+                answer.evaluation
+            )
+        elif answer.answer_text.strip() and question is not None:
+            (
+                evaluation_schema,
+                follow_up_generated,
+            ) = await self._evaluate_and_follow_up(
+                interview, question, answer
+            )
+            await self._db.refresh(interview)
+
+        next_q = await self._get_next_question(interview)
+        is_complete = next_q is None and not follow_up_generated
+
+        # Attach the just-saved media in memory — serializing answer.media
+        # must not trigger a lazy load in the async session.
+        answer.media = media
+        return InterviewAnswerMediaSubmitResponse(
+            media=InterviewAnswerMediaResponse.model_validate(media),
+            answer=InterviewAnswerResponse.model_validate(answer),
+            evaluation=evaluation_schema,
+            next_question=InterviewQuestionResponse.model_validate(next_q)
+            if next_q
+            else None,
+            follow_up_generated=follow_up_generated,
+            is_complete=is_complete,
+            message="Recording processed",
+        )
 
     async def complete_interview(
         self, user_id: uuid.UUID, interview_id: uuid.UUID
@@ -522,6 +658,16 @@ class Interview:
         if not interview.answers:
             raise CustomException(
                 400, "Cannot complete an interview with no answers"
+            )
+        if any(
+            a.media is not None
+            and a.media.transcription_status == TranscriptionStatus.PENDING
+            for a in interview.answers
+        ):
+            raise CustomException(
+                409,
+                "A recording is still being transcribed. "
+                "Please wait a moment and try again.",
             )
 
         report = await self._generate_report(interview)

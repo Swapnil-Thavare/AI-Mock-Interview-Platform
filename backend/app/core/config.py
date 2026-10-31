@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     SUPABASE_MEDIA_BUCKET: str = "interview-media"
     INTERVIEW_MEDIA_MAX_MB: int = 25
 
+    # Transcription provider (voice-first AUDIO/VIDEO answers)
+    TRANSCRIPTION_PROVIDER: str = "gemini"
+    TRANSCRIPTION_TIMEOUT: int = 90
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

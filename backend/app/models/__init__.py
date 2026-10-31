@@ -7,6 +7,7 @@ from .interview_answer_media import (
     InterviewAnswerMedia,
     MediaKind,
     MediaUploadStatus,
+    TranscriptionStatus,
 )
 from .interview_question import InterviewQuestion, QuestionType
 from .interview_result import InterviewResult
@@ -32,5 +33,6 @@ __all__ = [
     "InterviewAnswerMedia",
     "MediaKind",
     "MediaUploadStatus",
+    "TranscriptionStatus",
     "InterviewResult",
 ]
