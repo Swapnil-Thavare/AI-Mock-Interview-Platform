@@ -18,6 +18,8 @@ import type {
   InterviewMode,
   Question,
   AnswerEvaluation,
+  SubmitAnswerResponse,
+  SubmitMediaResponse,
 } from '@/types';
 
 const QUESTION_TIME = 120;
@@ -36,7 +38,7 @@ export const Interview: React.FC = () => {
   const [devicesReady, setDevicesReady] = useState(false);
   const recording = useInterviewRecording(activeMode);
   const [mediaUpload, setMediaUpload] = useState<
-    'idle' | 'uploading' | 'uploaded' | 'failed'
+    'idle' | 'uploading' | 'uploaded' | 'failed' | 'eval_failed'
   >('idle');
   const pendingUploadRef = useRef<{
     answerId: string;
@@ -113,16 +115,21 @@ export const Interview: React.FC = () => {
   const progress = total ? ((answeredCount + (submitting ? 1 : 0)) / total) * 100 : 0;
   const isLast = !current || current.id === interview?.questions[interview.questions.length - 1]?.id;
 
+  const voiceFirst = activeMode !== 'TEXT';
+
   const handleSubmit = async () => {
     if (!current || !interviewId || submitting) return;
     const trimmed = text.trim();
-    if (!trimmed) {
+    // Voice-first AUDIO/VIDEO answers are spoken, not typed — the typed
+    // field is optional notes. TEXT still requires a non-empty answer.
+    if (!voiceFirst && !trimmed) {
       setError('Please type an answer before submitting.');
       return;
     }
     setSubmitting(true);
     setError('');
     setEvaluation(null);
+    setMediaUpload('idle');
 
     try {
       const response = await interviewService.submitAnswer(interviewId, current.id, {
@@ -133,24 +140,33 @@ export const Interview: React.FC = () => {
         submittedAt: new Date().toISOString(),
       });
 
-      // The answer is already persisted; uploading its recording is a
-      // separate, best-effort step with a visible status and retry.
+      let outcome: SubmitAnswerResponse = response;
       const answerId = response.answer?.id;
-      if (activeMode !== 'TEXT' && answerId) {
+      if (voiceFirst && answerId) {
         const media = await recording.stopAndCollect();
-        if (media) await uploadRecording(answerId, media);
+        if (media) {
+          // One request performs upload → transcription → evaluation. Do
+          // not advance while it fails — the retry below re-sends the blob.
+          const processed = await uploadRecording(answerId, media);
+          if (!processed) return;
+          outcome = processed;
+        } else {
+          // No recording captured — the placeholder answer stays empty and
+          // counts as skipped downstream.
+          setError('No recording was captured — your answer was saved as empty.');
+        }
       }
 
-      setEvaluation(response.evaluation ?? null);
+      setEvaluation(outcome.evaluation ?? null);
       const updated = await interviewService.getById(interviewId);
       setInterview(updated);
 
-      if (response.is_complete || response.next_question == null) {
+      if (outcome.is_complete || outcome.next_question == null) {
         await handleEnd(updated);
         return;
       }
 
-      setCurrent(response.next_question);
+      setCurrent(outcome.next_question);
       setText('');
     } catch (err) {
       setError(getApiErrorMessage(err, 'Could not submit answer. Please try again.'));
@@ -191,27 +207,57 @@ export const Interview: React.FC = () => {
     }
   };
 
-  const uploadRecording = async (answerId: string, media: RecordedMedia) => {
-    if (!interviewId) return;
+  const uploadRecording = async (
+    answerId: string,
+    media: RecordedMedia
+  ): Promise<SubmitMediaResponse | null> => {
+    if (!interviewId) return null;
     setMediaUpload('uploading');
     try {
-      await interviewService.uploadAnswerMedia(
+      const result = await interviewService.uploadAnswerMedia(
         interviewId,
         answerId,
         media.blob,
         media.durationSeconds
       );
-      setMediaUpload('uploaded');
-      pendingUploadRef.current = null;
+      if (result.media?.transcription_status === 'COMPLETED' && !result.evaluation) {
+        // Transcript saved but evaluation unavailable — the same retry
+        // re-uploads the blob; the backend skips transcription and
+        // re-runs only the evaluation.
+        setMediaUpload('eval_failed');
+        pendingUploadRef.current = { answerId, media };
+      } else {
+        setMediaUpload('uploaded');
+        pendingUploadRef.current = null;
+      }
+      return result;
     } catch {
       setMediaUpload('failed');
       pendingUploadRef.current = { answerId, media };
+      return null;
     }
   };
 
   const retryMediaUpload = async () => {
     const pending = pendingUploadRef.current;
-    if (pending) await uploadRecording(pending.answerId, pending.media);
+    if (!pending || submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await uploadRecording(pending.answerId, pending.media);
+      if (result) {
+        setEvaluation(result.evaluation ?? null);
+        const updated = await interviewService.getById(interviewId!);
+        setInterview(updated);
+        if (result.is_complete || result.next_question == null) {
+          await handleEnd(updated);
+          return;
+        }
+        setCurrent(result.next_question);
+        setText('');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleModeSwitch = async (mode: InterviewMode) => {
@@ -306,7 +352,8 @@ export const Interview: React.FC = () => {
           key={current.id}
           durationSeconds={QUESTION_TIME}
           onTimeUp={() => {
-            if (text.trim()) handleSubmit();
+            // Voice-first: time-up still submits — the recording is the answer.
+            if (text.trim() || voiceFirst) handleSubmit();
             else handleSkip();
           }}
         />
@@ -324,17 +371,36 @@ export const Interview: React.FC = () => {
       <QuestionCard question={current} index={answeredCount} total={Math.max(total, answeredCount + 1)} />
 
       <div className="mt-6">
+        {voiceFirst && (
+          <p className="mb-2 text-sm text-gray-600">
+            Speak your answer aloud — your recording is transcribed and
+            evaluated when you submit.
+          </p>
+        )}
         <Textarea
-          label="Your answer"
-          rows={6}
+          label={voiceFirst ? 'Notes (optional)' : 'Your answer'}
+          rows={voiceFirst ? 3 : 6}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Type your response here..."
+          placeholder={
+            voiceFirst
+              ? 'Optional notes — your spoken answer is what gets evaluated.'
+              : 'Type your response here...'
+          }
           disabled={submitting}
         />
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button onClick={handleSubmit} disabled={!text.trim() || submitting}>
-            {submitting ? 'Evaluating...' : isLast ? 'Finish' : 'Submit & next'}
+          <Button
+            onClick={handleSubmit}
+            disabled={(!voiceFirst && !text.trim()) || submitting}
+          >
+            {submitting
+              ? voiceFirst
+                ? 'Processing...'
+                : 'Evaluating...'
+              : isLast
+                ? 'Finish'
+                : 'Submit & next'}
           </Button>
           <Button variant="secondary" onClick={handleSkip} disabled={submitting}>
             {isLast ? 'Skip & finish' : 'Skip'}
@@ -345,23 +411,37 @@ export const Interview: React.FC = () => {
         </div>
       </div>
 
-      {activeMode !== 'TEXT' && mediaUpload !== 'idle' && (
+      {voiceFirst && mediaUpload !== 'idle' && (
         <div className="mt-3 text-sm" role="status">
           {mediaUpload === 'uploading' && (
-            <span className="text-gray-600">Uploading recording...</span>
+            <span className="text-gray-600">
+              Uploading, transcribing and evaluating your answer...
+            </span>
           )}
           {mediaUpload === 'uploaded' && (
-            <span className="text-green-700">Recording saved.</span>
+            <span className="text-green-700">Answer processed.</span>
           )}
           {mediaUpload === 'failed' && (
             <span className="text-red-600">
-              Recording upload failed — your answer was saved.{' '}
+              Recording processing failed — your answer was saved.{' '}
               <button
                 type="button"
                 className="font-medium underline"
                 onClick={() => void retryMediaUpload()}
               >
-                Retry upload
+                Retry
+              </button>
+            </span>
+          )}
+          {mediaUpload === 'eval_failed' && (
+            <span className="text-red-600">
+              Transcript saved — evaluation is unavailable right now.{' '}
+              <button
+                type="button"
+                className="font-medium underline"
+                onClick={() => void retryMediaUpload()}
+              >
+                Retry evaluation
               </button>
             </span>
           )}

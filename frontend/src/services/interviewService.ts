@@ -9,6 +9,7 @@ import type {
   InterviewResult,
   AnswerEvaluation,
   SubmitAnswerResponse,
+  SubmitMediaResponse,
 } from '@/types';
 
 const normalizeQuestion = (data: Record<string, unknown>): Question => ({
@@ -126,6 +127,22 @@ const normalizeAnswer = (data: Record<string, unknown>): Answer => ({
   timeTaken: (data.timeTaken as number) ?? 0,
   submittedAt:
     (data.created_at as string) ?? (data.submittedAt as string) ?? '',
+  media: data.media ? (data.media as AnswerMedia) : undefined,
+});
+
+const normalizeSubmitResponse = (
+  raw: Record<string, unknown>
+): SubmitAnswerResponse => ({
+  answer: normalizeAnswer((raw.answer ?? {}) as Record<string, unknown>),
+  evaluation: raw.evaluation
+    ? normalizeEvaluation(raw.evaluation as Record<string, unknown>)
+    : undefined,
+  next_question: raw.next_question
+    ? normalizeQuestion(raw.next_question as Record<string, unknown>)
+    : undefined,
+  follow_up_generated: Boolean(raw.follow_up_generated),
+  is_complete: Boolean(raw.is_complete),
+  message: (raw.message as string) ?? 'Answer submitted',
 });
 
 const questionTypesFromSetup = (setup: InterviewSetup): string[] => {
@@ -169,7 +186,7 @@ export const interviewService = {
     answerId: string,
     blob: Blob,
     durationSeconds?: number
-  ): Promise<AnswerMedia> => {
+  ): Promise<SubmitMediaResponse> => {
     const form = new FormData();
     form.append('file', blob, 'recording');
     if (durationSeconds !== undefined) {
@@ -179,7 +196,11 @@ export const interviewService = {
       `/interviews/${interviewId}/answers/${answerId}/media`,
       form
     );
-    return data as AnswerMedia;
+    const raw = (data ?? {}) as Record<string, unknown>;
+    return {
+      ...normalizeSubmitResponse(raw),
+      media: (raw.media ?? {}) as AnswerMedia,
+    };
   },
 
   getById: async (id: string): Promise<Interview> => {
@@ -214,17 +235,7 @@ export const interviewService = {
       answer_text: answer.skipped ? '' : answer.text,
       skipped: answer.skipped,
     });
-    const raw = (data ?? {}) as Record<string, unknown>;
-    return {
-      answer: normalizeAnswer((raw.answer ?? {}) as Record<string, unknown>),
-      evaluation: raw.evaluation ? normalizeEvaluation(raw.evaluation as Record<string, unknown>) : undefined,
-      next_question: raw.next_question
-        ? normalizeQuestion(raw.next_question as Record<string, unknown>)
-        : undefined,
-      follow_up_generated: Boolean(raw.follow_up_generated),
-      is_complete: Boolean(raw.is_complete),
-      message: (raw.message as string) ?? 'Answer submitted',
-    };
+    return normalizeSubmitResponse((data ?? {}) as Record<string, unknown>);
   },
 
   complete: async (interviewId: string): Promise<InterviewResult> => {

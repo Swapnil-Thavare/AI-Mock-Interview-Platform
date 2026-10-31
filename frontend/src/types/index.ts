@@ -132,7 +132,10 @@ export interface Answer {
   skipped: boolean;
   timeTaken: number;
   submittedAt: string;
+  media?: AnswerMedia;
 }
+
+export type TranscriptionStatus = 'NONE' | 'PENDING' | 'COMPLETED' | 'FAILED';
 
 export interface AnswerMedia {
   id: string;
@@ -145,6 +148,10 @@ export interface AnswerMedia {
   duration_seconds?: number | null;
   status: 'PENDING' | 'UPLOADED' | 'FAILED';
   uploaded_at?: string | null;
+  transcription_status?: TranscriptionStatus;
+  transcript_text?: string | null;
+  transcription_error?: string | null;
+  transcribed_at?: string | null;
 }
 
 export interface AnswerEvaluation {
@@ -171,6 +178,12 @@ export interface SubmitAnswerResponse {
   follow_up_generated: boolean;
   is_complete: boolean;
   message: string;
+}
+
+// POST /interviews/{id}/answers/{answer_id}/media — voice-first pipeline
+// (upload → transcribe → evaluate) returns media + progression data.
+export interface SubmitMediaResponse extends SubmitAnswerResponse {
+  media: AnswerMedia;
 }
 
 export interface InterviewResult {
