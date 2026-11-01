@@ -15,6 +15,10 @@ from app.schemas import (
     InterviewModeUpdate,
     InterviewResponse,
     InterviewResultResponse,
+    ProctoringEventBatchIn,
+    ProctoringEventBatchResponse,
+    ProctoringEventResponse,
+    ProctoringSummaryResponse,
     SubmitAnswerResponse,
 )
 from app.services.interview.interview_service import Interview
@@ -100,5 +104,61 @@ async def complete_interview(
     current_user: User = Depends(get_current_user),
 ):
     return await Interview(db).complete_interview(
+        current_user.id, interview_id
+    )
+
+
+@router.post(
+    "/{interview_id}/proctoring-consent", response_model=InterviewResponse
+)
+async def acknowledge_proctoring_consent(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).acknowledge_proctoring_consent(
+        current_user.id, interview_id
+    )
+
+
+@router.post(
+    "/{interview_id}/proctoring-events",
+    response_model=ProctoringEventBatchResponse,
+)
+async def submit_proctoring_events(
+    interview_id: uuid.UUID,
+    payload: ProctoringEventBatchIn,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).submit_proctoring_events(
+        current_user.id, interview_id, payload
+    )
+
+
+@router.get(
+    "/{interview_id}/proctoring-events",
+    response_model=List[ProctoringEventResponse],
+)
+async def list_proctoring_events(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).list_proctoring_events(
+        current_user.id, interview_id
+    )
+
+
+@router.get(
+    "/{interview_id}/proctoring-summary",
+    response_model=ProctoringSummaryResponse,
+)
+async def get_proctoring_summary(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).proctoring_summary(
         current_user.id, interview_id
     )

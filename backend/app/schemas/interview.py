@@ -28,6 +28,20 @@ class MediaKind(str, Enum):
     VIDEO = "VIDEO"
 
 
+class ProctoringEventType(str, Enum):
+    FACE_NOT_DETECTED = "FACE_NOT_DETECTED"
+    MULTIPLE_FACES_DETECTED = "MULTIPLE_FACES_DETECTED"
+    CAMERA_DISCONNECTED = "CAMERA_DISCONNECTED"
+    CAMERA_INTERRUPTED = "CAMERA_INTERRUPTED"
+    TAB_HIDDEN = "TAB_HIDDEN"
+    WINDOW_FOCUS_LOST = "WINDOW_FOCUS_LOST"
+
+
+class ProctoringSeverity(str, Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+
+
 class MediaUploadStatus(str, Enum):
     PENDING = "PENDING"
     UPLOADED = "UPLOADED"
@@ -193,6 +207,7 @@ class InterviewResponse(BaseModel):
     questions: List[InterviewQuestionResponse] = []
     answers: List[InterviewAnswerResponse] = []
     result: Optional[InterviewResultResponse] = None
+    proctoring_consent_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
@@ -222,4 +237,61 @@ class InterviewAnswerMediaSubmitResponse(BaseModel):
     follow_up_generated: bool = False
     is_complete: bool = False
     message: str = "Media uploaded"
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringEventIn(BaseModel):
+    """A single client-reported proctoring observation.
+
+    Events represent continuous occurrences (periods), not detection frames.
+    Severity is optional; the server derives a default from the event type.
+    """
+    client_event_id: UUID
+    event_type: ProctoringEventType
+    severity: Optional[ProctoringSeverity] = None
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = Field(default=None, ge=0, le=86400)
+    question_id: Optional[UUID] = None
+    event_metadata: Optional[Dict[str, Any]] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringEventBatchIn(BaseModel):
+    events: List[ProctoringEventIn] = Field(default=[], max_length=100)
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringEventBatchResponse(BaseModel):
+    accepted: int = 0
+    duplicates: int = 0
+    rejected: int = 0
+    limit_reached: bool = False
+    message: str = "Proctoring events processed"
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringEventResponse(BaseModel):
+    id: UUID
+    interview_id: UUID
+    event_type: ProctoringEventType
+    severity: ProctoringSeverity
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    question_id: Optional[UUID] = None
+    event_metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringSummaryResponse(BaseModel):
+    interview_id: UUID
+    total_events: int = 0
+    counts: Dict[str, int] = {}
+    durations_seconds: Dict[str, float] = {}
+    first_event_at: Optional[datetime] = None
+    last_event_at: Optional[datetime] = None
+    event_window_seconds: Optional[float] = None
+    consent_acknowledged_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
