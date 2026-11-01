@@ -9,6 +9,11 @@ from .interview_answer_media import (
     MediaUploadStatus,
     TranscriptionStatus,
 )
+from .interview_proctoring_event import (
+    InterviewProctoringEvent,
+    ProctoringEventType,
+    ProctoringSeverity,
+)
 from .interview_question import InterviewQuestion, QuestionType
 from .interview_result import InterviewResult
 from .job_description import JobDescription
@@ -30,6 +35,9 @@ __all__ = [
     "InterviewQuestion",
     "QuestionType",
     "InterviewAnswer",
+    "InterviewProctoringEvent",
+    "ProctoringEventType",
+    "ProctoringSeverity",
     "InterviewAnswerMedia",
     "MediaKind",
     "MediaUploadStatus",

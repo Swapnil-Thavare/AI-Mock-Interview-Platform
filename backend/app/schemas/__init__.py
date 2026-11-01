@@ -11,6 +11,13 @@ from .interview import (
     InterviewResponse,
     InterviewResult,
     InterviewResultResponse,
+    ProctoringEventBatchIn,
+    ProctoringEventBatchResponse,
+    ProctoringEventIn,
+    ProctoringEventResponse,
+    ProctoringEventType,
+    ProctoringSeverity,
+    ProctoringSummaryResponse,
     SubmitAnswerResponse,
 )
 from .job_description import (
@@ -49,4 +56,11 @@ __all__ = [
     "InterviewResult",
     "InterviewResultResponse",
     "SubmitAnswerResponse",
+    "ProctoringEventType",
+    "ProctoringSeverity",
+    "ProctoringEventIn",
+    "ProctoringEventBatchIn",
+    "ProctoringEventBatchResponse",
+    "ProctoringEventResponse",
+    "ProctoringSummaryResponse",
 ]

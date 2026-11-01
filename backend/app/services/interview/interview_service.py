@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 import uuid
 
@@ -23,6 +24,11 @@ from app.models.interview_answer_media import (
     MediaUploadStatus,
     TranscriptionStatus,
 )
+from app.models.interview_proctoring_event import (
+    InterviewProctoringEvent as InterviewProctoringEventModel,
+    ProctoringEventType as ProctoringEventTypeModel,
+    ProctoringSeverity as ProctoringSeverityModel,
+)
 from app.models.interview_question import InterviewQuestion, QuestionType
 from app.models.interview_result import InterviewResult as InterviewResultModel
 from app.schemas.interview import (
@@ -36,6 +42,11 @@ from app.schemas.interview import (
     InterviewResponse,
     InterviewResult as InterviewResultSchema,
     InterviewResultResponse,
+    ProctoringEventBatchIn,
+    ProctoringEventBatchResponse,
+    ProctoringEventIn,
+    ProctoringEventResponse,
+    ProctoringSummaryResponse,
     SubmitAnswerResponse,
 )
 from app.services.ai.ai_service import AIService
@@ -71,6 +82,39 @@ _MEDIA_EXTENSIONS = {
     "video/mp4": "mp4",
     "video/quicktime": "mov",
     "video/x-matroska": "mkv",
+}
+
+# Phase 7D — session-integrity (proctoring) events.
+_MAX_PROCTORING_EVENTS_PER_INTERVIEW = 1000
+_PROCTORING_METADATA_MAX_BYTES = 2048
+_PROCTORING_METADATA_ALLOWED_KEYS = {
+    "face_count",
+    "consecutive_samples",
+    "reason",
+    "detector",
+}
+# Client clocks may be skewed; allow small future drift and a bounded
+# lookback relative to the interview's creation time. Legitimate events can
+# only exist after the interview row is created (the client learns
+# interview_id at that point), so one hour of skew is sufficient.
+_PROCTORING_FUTURE_SKEW = timedelta(minutes=5)
+_PROCTORING_PAST_SKEW = timedelta(hours=1)
+# Tolerance for duration_seconds vs the started_at/ended_at window.
+_DURATION_CONSISTENCY_TOLERANCE_SECONDS = 5.0
+
+_DEFAULT_PROCTORING_SEVERITY = {
+    ProctoringEventTypeModel.FACE_NOT_DETECTED: ProctoringSeverityModel.WARNING,
+    ProctoringEventTypeModel.MULTIPLE_FACES_DETECTED: (
+        ProctoringSeverityModel.WARNING
+    ),
+    ProctoringEventTypeModel.CAMERA_DISCONNECTED: (
+        ProctoringSeverityModel.WARNING
+    ),
+    ProctoringEventTypeModel.CAMERA_INTERRUPTED: (
+        ProctoringSeverityModel.WARNING
+    ),
+    ProctoringEventTypeModel.TAB_HIDDEN: ProctoringSeverityModel.INFO,
+    ProctoringEventTypeModel.WINDOW_FOCUS_LOST: ProctoringSeverityModel.INFO,
 }
 
 
@@ -794,6 +838,228 @@ class Interview:
             total_questions=len(interview.questions),
             answered=sum(1 for a in interview.answers if a.answer_text.strip()),
             skipped=sum(1 for a in interview.answers if not a.answer_text.strip()),
+        )
+
+    async def acknowledge_proctoring_consent(
+        self, user_id: uuid.UUID, interview_id: uuid.UUID
+    ) -> InterviewResponse:
+        """Record when the candidate acknowledged session monitoring.
+
+        Idempotent — the earliest acknowledgement is kept.
+        """
+        interview = await self._get_owned_interview(user_id, interview_id)
+        if interview.proctoring_consent_at is None:
+            interview.proctoring_consent_at = datetime.now(timezone.utc)
+            interview = await self._query.save(interview)
+        return InterviewResponse.model_validate(interview)
+
+    @staticmethod
+    def _aware(dt: datetime) -> datetime:
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+    def _build_proctoring_row(
+        self,
+        interview: InterviewModel,
+        question_ids: set,
+        event: ProctoringEventIn,
+        now: datetime,
+        earliest: datetime,
+    ) -> Optional[InterviewProctoringEventModel]:
+        """Validate one submitted event into a model row, or None to reject.
+
+        Never raises — a malformed event must not sink the whole batch.
+        """
+        started_at = self._aware(event.started_at)
+        ended_at = self._aware(event.ended_at) if event.ended_at else None
+        if ended_at is not None:
+            if ended_at < started_at:
+                return None
+            if ended_at > now + _PROCTORING_FUTURE_SKEW:
+                return None
+        if started_at > now + _PROCTORING_FUTURE_SKEW:
+            return None
+        if started_at < earliest:
+            return None
+
+        duration = event.duration_seconds
+        if duration is None and ended_at is not None:
+            duration = round((ended_at - started_at).total_seconds(), 3)
+        elif duration is not None and ended_at is not None:
+            window = (ended_at - started_at).total_seconds()
+            if abs(duration - window) > _DURATION_CONSISTENCY_TOLERANCE_SECONDS:
+                return None
+
+        metadata = None
+        if event.event_metadata:
+            metadata = {
+                k: v
+                for k, v in event.event_metadata.items()
+                if k in _PROCTORING_METADATA_ALLOWED_KEYS
+                and isinstance(v, (str, int, float, bool))
+            }
+            try:
+                if len(json.dumps(metadata).encode("utf-8")) > (
+                    _PROCTORING_METADATA_MAX_BYTES
+                ):
+                    return None
+            except (TypeError, ValueError):
+                return None
+
+        severity = event.severity
+        if severity is None:
+            severity = _DEFAULT_PROCTORING_SEVERITY[
+                ProctoringEventTypeModel(event.event_type.value)
+            ]
+
+        return InterviewProctoringEventModel(
+            interview_id=interview.id,
+            user_id=interview.user_id,
+            question_id=(
+                event.question_id if event.question_id in question_ids else None
+            ),
+            client_event_id=event.client_event_id,
+            event_type=ProctoringEventTypeModel(event.event_type.value),
+            severity=ProctoringSeverityModel(severity.value),
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_seconds=duration,
+            event_metadata=metadata or None,
+        )
+
+    async def submit_proctoring_events(
+        self,
+        user_id: uuid.UUID,
+        interview_id: uuid.UUID,
+        payload: ProctoringEventBatchIn,
+    ) -> ProctoringEventBatchResponse:
+        """Persist a batch of client-reported proctoring events.
+
+        Retries are idempotent via (interview_id, client_event_id). Completed
+        interviews and limit breaches return a graceful 200 with zero accepted
+        so pagehide flushes do not error-loop on the client.
+        """
+        interview = await self._get_owned_interview(user_id, interview_id)
+        events = payload.events
+        if not events:
+            return ProctoringEventBatchResponse()
+
+        if interview.status == InterviewStatus.COMPLETED:
+            return ProctoringEventBatchResponse(
+                rejected=len(events),
+                message="Interview is completed; events were not recorded",
+            )
+
+        existing_count = await self._query.count_proctoring_events(interview.id)
+        if existing_count >= _MAX_PROCTORING_EVENTS_PER_INTERVIEW:
+            return ProctoringEventBatchResponse(
+                rejected=len(events),
+                limit_reached=True,
+                message="Proctoring event limit reached",
+            )
+
+        existing_ids = await self._query.get_existing_proctoring_client_ids(
+            interview.id, [e.client_event_id for e in events]
+        )
+        question_ids = {q.id for q in interview.questions}
+        now = datetime.now(timezone.utc)
+        created = self._aware(interview.created_at) if interview.created_at else now
+        earliest = created - _PROCTORING_PAST_SKEW
+
+        rows: List[InterviewProctoringEventModel] = []
+        accepted = duplicates = rejected = 0
+        limit_reached = False
+        seen_in_batch = set()
+        for event in events:
+            if existing_count + accepted >= _MAX_PROCTORING_EVENTS_PER_INTERVIEW:
+                limit_reached = True
+                rejected += 1
+                continue
+            if (
+                event.client_event_id in existing_ids
+                or event.client_event_id in seen_in_batch
+            ):
+                duplicates += 1
+                continue
+            row = self._build_proctoring_row(
+                interview, question_ids, event, now, earliest
+            )
+            if row is None:
+                rejected += 1
+                continue
+            seen_in_batch.add(event.client_event_id)
+            rows.append(row)
+            accepted += 1
+
+        if rows:
+            self._db.add_all(rows)
+            try:
+                await self._db.commit()
+            except IntegrityError:
+                # Rare: a concurrent batch raced the uniqueness check. Retry
+                # row-by-row so valid events are still recorded.
+                await self._db.rollback()
+                accepted = duplicates = 0
+                for row in rows:
+                    self._db.add(row)
+                    try:
+                        await self._db.commit()
+                    except IntegrityError:
+                        await self._db.rollback()
+                        duplicates += 1
+                    else:
+                        accepted += 1
+
+        return ProctoringEventBatchResponse(
+            accepted=accepted,
+            duplicates=duplicates,
+            rejected=rejected,
+            limit_reached=limit_reached,
+        )
+
+    async def list_proctoring_events(
+        self, user_id: uuid.UUID, interview_id: uuid.UUID
+    ) -> List[ProctoringEventResponse]:
+        interview = await self._get_owned_interview(user_id, interview_id)
+        events = await self._query.get_proctoring_events(interview.id)
+        return [
+            ProctoringEventResponse.model_validate(e) for e in events
+        ]
+
+    async def proctoring_summary(
+        self, user_id: uuid.UUID, interview_id: uuid.UUID
+    ) -> ProctoringSummaryResponse:
+        interview = await self._get_owned_interview(user_id, interview_id)
+        events = await self._query.get_proctoring_events(interview.id)
+
+        counts: Dict[str, int] = {}
+        durations: Dict[str, float] = {}
+        first: Optional[datetime] = None
+        last: Optional[datetime] = None
+        for event in events:
+            key = event.event_type.value
+            counts[key] = counts.get(key, 0) + 1
+            if event.duration_seconds:
+                durations[key] = round(
+                    durations.get(key, 0.0) + event.duration_seconds, 3
+                )
+            start = self._aware(event.started_at)
+            end = self._aware(event.ended_at) if event.ended_at else start
+            first = start if first is None or start < first else first
+            last = end if last is None or end > last else last
+
+        return ProctoringSummaryResponse(
+            interview_id=interview.id,
+            total_events=len(events),
+            counts=counts,
+            durations_seconds=durations,
+            first_event_at=first,
+            last_event_at=last,
+            event_window_seconds=(
+                round((last - first).total_seconds(), 3)
+                if first is not None and last is not None
+                else None
+            ),
+            consent_acknowledged_at=interview.proctoring_consent_at,
         )
 
     async def _get_owned_interview(
