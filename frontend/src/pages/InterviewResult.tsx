@@ -6,11 +6,14 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { interviewService } from '@/services/interviewService';
 import type {
+  Answer,
+  Interview,
   InterviewMode,
   InterviewResult as InterviewResultType,
   ProctoringEvent,
   ProctoringEventType,
   ProctoringSummary,
+  SpeechAnalysis,
 } from '@/types';
 
 const PROCTORING_LABELS: Record<ProctoringEventType, string> = {
@@ -81,6 +84,61 @@ const ScoreCard: React.FC<{ label: string; value: number | null | undefined; col
   );
 };
 
+interface FillerSplit {
+  definite: number | null;
+  possible: number | null;
+}
+
+const fillerSplit = (analysis: SpeechAnalysis): FillerSplit => {
+  const breakdown = analysis.filler_breakdown;
+  if (!breakdown) return { definite: null, possible: null };
+  return Object.values(breakdown).reduce<FillerSplit>(
+    (acc, entry) => {
+      if (entry?.ambiguous) acc.possible = (acc.possible ?? 0) + entry.count;
+      else acc.definite = (acc.definite ?? 0) + entry.count;
+      return acc;
+    },
+    { definite: 0, possible: 0 }
+  );
+};
+
+interface SpeechRow {
+  answer: Answer;
+  analysis: SpeechAnalysis;
+  questionText: string;
+  fillers: FillerSplit;
+}
+
+const collectSpeechRows = (interview: Interview | null): SpeechRow[] => {
+  if (!interview) return [];
+  return interview.answers.flatMap((answer) => {
+    const analysis = answer.media?.speech_analysis;
+    if (!analysis) return [];
+    const question = interview.questions.find(
+      (q) => q.id === (answer.question_id ?? answer.questionId)
+    );
+    return [
+      {
+        answer,
+        analysis,
+        questionText: question?.text ?? question?.question_text ?? 'Question',
+        fillers: fillerSplit(analysis),
+      },
+    ];
+  });
+};
+
+const average = (values: number[]): number | null =>
+  values.length
+    ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10
+    : null;
+
+const metric = (value: number | null | undefined, suffix = ''): string =>
+  value == null ? '—' : `${value}${suffix}`;
+
+const percent = (ratio: number | null | undefined): string =>
+  ratio == null ? '—' : `${Math.round(ratio * 100)}%`;
+
 export const InterviewResult: React.FC = () => {
   const navigate = useNavigate();
   const { interviewId } = useParams<{ interviewId: string }>();
@@ -88,6 +146,7 @@ export const InterviewResult: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [interviewMode, setInterviewMode] = useState<InterviewMode>('TEXT');
+  const [interviewData, setInterviewData] = useState<Interview | null>(null);
   const [proctoring, setProctoring] = useState<{
     summary: ProctoringSummary;
     events: ProctoringEvent[];
@@ -105,6 +164,7 @@ export const InterviewResult: React.FC = () => {
     try {
       const interview = await interviewService.getById(id);
       setInterviewMode(interview.interview_mode ?? 'TEXT');
+      setInterviewData(interview);
       if (interview.interview_mode !== 'TEXT') {
         try {
           const [summary, events] = await Promise.all([
@@ -142,6 +202,7 @@ export const InterviewResult: React.FC = () => {
         const interview = await interviewService.getById(id);
         if (ignore) return;
         setInterviewMode(interview.interview_mode ?? 'TEXT');
+        setInterviewData(interview);
         if (interview.interview_mode !== 'TEXT') {
           try {
             const [summary, events] = await Promise.all([
@@ -204,6 +265,36 @@ export const InterviewResult: React.FC = () => {
   const total = result.totalQuestions ?? 0;
   const answered = result.answered ?? 0;
   const skipped = result.skipped ?? 0;
+
+  const speechRows = collectSpeechRows(interviewData);
+  const speechAnalyses = speechRows.map((r) => r.analysis);
+  const speechAggregate = {
+    avgWpm: average(
+      speechAnalyses.flatMap((a) =>
+        a.wpm_recording == null ? [] : [a.wpm_recording]
+      )
+    ),
+    avgSpeechRate: average(
+      speechAnalyses.flatMap((a) =>
+        a.wpm_speech == null ? [] : [a.wpm_speech]
+      )
+    ),
+    avgDuration: average(
+      speechAnalyses.flatMap((a) =>
+        a.recording_seconds == null ? [] : [a.recording_seconds]
+      )
+    ),
+    definiteFillers: speechRows.every((r) => r.fillers.definite == null)
+      ? null
+      : speechRows.reduce((sum, r) => sum + (r.fillers.definite ?? 0), 0),
+    possibleFillers: speechRows.every((r) => r.fillers.possible == null)
+      ? null
+      : speechRows.reduce((sum, r) => sum + (r.fillers.possible ?? 0), 0),
+    totalPauses: speechAnalyses.reduce(
+      (sum, a) => sum + (a.pause_total_seconds ?? 0),
+      0
+    ),
+  };
 
   return (
     <DashboardLayout>
@@ -373,6 +464,238 @@ export const InterviewResult: React.FC = () => {
                   </ul>
                 </div>
               )}
+            </>
+          )}
+        </Card>
+      )}
+
+      {interviewMode !== 'TEXT' && (
+        <Card className="mt-6">
+          <h3 className="mb-1 text-lg font-semibold text-gray-900">
+            Communication Analysis
+          </h3>
+          <p className="mb-4 text-xs text-gray-500">
+            Descriptive observations about how each spoken answer was
+            delivered — estimated from transcripts and recordings. These are
+            not scores and do not affect the interview result. ≈ marks
+            approximate (ambiguous) filler matches; — means a metric was
+            unavailable.
+          </p>
+          {speechRows.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              No communication analysis is available for this interview.
+            </p>
+          ) : (
+            <>
+              <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="rounded-lg bg-gray-50 p-3 text-center">
+                  <div className="text-xs text-gray-500">Avg speaking pace</div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {metric(speechAggregate.avgWpm, ' wpm')}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3 text-center">
+                  <div className="text-xs text-gray-500">
+                    Avg rate excl. pauses
+                  </div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {metric(speechAggregate.avgSpeechRate, ' wpm')}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3 text-center">
+                  <div className="text-xs text-gray-500">
+                    Avg answer length
+                  </div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {metric(speechAggregate.avgDuration, 's')}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3 text-center">
+                  <div className="text-xs text-gray-500">Total fillers</div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {metric(speechAggregate.definiteFillers)}{' '}
+                    <span className="text-sm font-normal text-gray-500">
+                      definite
+                    </span>
+                    {' · '}
+                    {metric(speechAggregate.possibleFillers)}{' '}
+                    <span className="text-sm font-normal text-gray-500">
+                      possible
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3 text-center">
+                  <div className="text-xs text-gray-500">
+                    Total estimated pauses
+                  </div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {metric(
+                      speechAggregate.totalPauses === 0 &&
+                        speechAnalyses.every(
+                          (a) => a.pause_total_seconds == null
+                        )
+                        ? null
+                        : Math.round(speechAggregate.totalPauses * 10) / 10,
+                      's'
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {speechRows.map(({ answer, analysis, questionText, fillers }) => (
+                  <div
+                    key={analysis.id}
+                    className="rounded-lg border border-gray-200 p-4"
+                  >
+                    <p className="mb-3 text-sm font-medium text-gray-900">
+                      {questionText}
+                    </p>
+                    <div className="grid gap-x-6 gap-y-1 text-sm text-gray-700 sm:grid-cols-2 lg:grid-cols-3">
+                      <span>Words: {metric(analysis.word_count)}</span>
+                      <span>
+                        Answer length:{' '}
+                        {metric(analysis.recording_seconds, 's')}
+                      </span>
+                      <span>
+                        Pace: {metric(analysis.wpm_recording, ' wpm')}
+                      </span>
+                      <span>
+                        Rate excl. pauses:{' '}
+                        {metric(analysis.wpm_speech, ' wpm')}
+                      </span>
+                      <span>
+                        Definite fillers: {metric(fillers.definite)}
+                      </span>
+                      <span>
+                        Possible fillers: {metric(fillers.possible)}
+                      </span>
+                      {analysis.filler_per_100_words != null && (
+                        <span>
+                          Filler rate: ≈{analysis.filler_per_100_words} per
+                          100 words
+                        </span>
+                      )}
+                      <span>
+                        Pauses:{' '}
+                        {analysis.pause_count == null
+                          ? '—'
+                          : `${analysis.pause_count} (${metric(
+                              analysis.pause_total_seconds,
+                              's'
+                            )} total)`}
+                      </span>
+                      <span>
+                        Unique-word ratio:{' '}
+                        {percent(analysis.unique_word_ratio)}
+                      </span>
+                      {analysis.top_repeated_words &&
+                        analysis.top_repeated_words.length > 0 && (
+                          <span className="sm:col-span-2">
+                            Repeated words:{' '}
+                            {analysis.top_repeated_words
+                              .map((w) => `${w.word} (${w.count})`)
+                              .join(', ')}
+                          </span>
+                        )}
+                    </div>
+                    {analysis.unique_word_ratio != null && (
+                      <p className="mt-1 text-xs text-gray-400">
+                        Descriptive measure only. Unique-word ratio is
+                        influenced by response length and should not be
+                        interpreted as a standalone measure of vocabulary
+                        quality.
+                      </p>
+                    )}
+                    {analysis.filler_breakdown &&
+                      Object.keys(analysis.filler_breakdown).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {Object.entries(analysis.filler_breakdown).map(
+                            ([term, entry]) => (
+                              <Badge key={term} color="gray">
+                                {entry.ambiguous ? '≈' : ''}
+                                {term} ×{entry.count}
+                              </Badge>
+                            )
+                          )}
+                        </div>
+                      )}
+                    {analysis.status === 'FAILED' && (
+                      <p className="mt-2 text-xs text-gray-500">
+                        Communication observations for this answer are
+                        unavailable; the descriptive metrics above were still
+                        recorded.
+                      </p>
+                    )}
+                    {analysis.structure_summary && (
+                      <p className="mt-3 text-sm text-gray-700">
+                        <span className="font-medium">Structure:</span>{' '}
+                        {analysis.structure_summary}
+                      </p>
+                    )}
+                    {analysis.organization_notes &&
+                      analysis.organization_notes.length > 0 && (
+                        <ul className="mt-1 list-inside list-disc text-sm text-gray-600">
+                          {analysis.organization_notes.map((note) => (
+                            <li key={note}>{note}</li>
+                          ))}
+                        </ul>
+                      )}
+                    {analysis.clarity_notes && (
+                      <p className="mt-2 text-sm text-gray-700">
+                        <span className="font-medium">Clarity:</span>{' '}
+                        {analysis.clarity_notes}
+                      </p>
+                    )}
+                    {((analysis.communication_strengths?.length ?? 0) > 0 ||
+                      (analysis.communication_improvements?.length ?? 0) >
+                        0) && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {analysis.communication_strengths &&
+                          analysis.communication_strengths.length > 0 && (
+                            <div>
+                              <div className="text-xs font-semibold text-green-700">
+                                Communication strengths
+                              </div>
+                              <ul className="list-inside list-disc text-sm text-gray-700">
+                                {analysis.communication_strengths.map(
+                                  (s) => (
+                                    <li key={s}>{s}</li>
+                                  )
+                                )}
+                              </ul>
+                            </div>
+                          )}
+                        {analysis.communication_improvements &&
+                          analysis.communication_improvements.length > 0 && (
+                            <div>
+                              <div className="text-xs font-semibold text-yellow-700">
+                                Could improve
+                              </div>
+                              <ul className="list-inside list-disc text-sm text-gray-700">
+                                {analysis.communication_improvements.map(
+                                  (s) => (
+                                    <li key={s}>{s}</li>
+                                  )
+                                )}
+                              </ul>
+                            </div>
+                          )}
+                      </div>
+                    )}
+                    {answer.media?.transcript_text && (
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-xs font-medium text-gray-500 hover:text-gray-700">
+                          Transcript
+                        </summary>
+                        <p className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3 text-sm text-gray-700">
+                          {answer.media.transcript_text}
+                        </p>
+                      </details>
+                    )}
+                  </div>
+                ))}
+              </div>
             </>
           )}
         </Card>

@@ -10,6 +10,7 @@ import {
 } from '@/components/interview/useInterviewRecording';
 import { useProctoring } from '@/components/interview/useProctoring';
 import { ProctoringIndicator } from '@/components/interview/ProctoringIndicator';
+import { analyzeAudioPauses } from '@/components/interview/analyzeAudioPauses';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Textarea';
@@ -254,11 +255,15 @@ export const Interview: React.FC = () => {
     if (!interviewId) return null;
     setMediaUpload('uploading');
     try {
+      // Estimated pause stats for speech analysis — null on unsupported
+      // browsers; never blocks the upload.
+      const pauses = await analyzeAudioPauses(media.blob);
       const result = await interviewService.uploadAnswerMedia(
         interviewId,
         answerId,
         media.blob,
-        media.durationSeconds
+        media.durationSeconds,
+        pauses ?? undefined
       );
       if (result.media?.transcription_status === 'COMPLETED' && !result.evaluation) {
         // Transcript saved but evaluation unavailable — the same retry

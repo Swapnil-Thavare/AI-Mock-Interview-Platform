@@ -14,6 +14,7 @@ import type {
   ProctoringEventBatchResponse,
   ProctoringEventInput,
   ProctoringSummary,
+  PauseStatsInput,
 } from '@/types';
 
 const normalizeQuestion = (data: Record<string, unknown>): Question => ({
@@ -189,12 +190,19 @@ export const interviewService = {
     interviewId: string,
     answerId: string,
     blob: Blob,
-    durationSeconds?: number
+    durationSeconds?: number,
+    pauses?: PauseStatsInput
   ): Promise<SubmitMediaResponse> => {
     const form = new FormData();
     form.append('file', blob, 'recording');
     if (durationSeconds !== undefined) {
       form.append('duration_seconds', String(Math.round(durationSeconds * 100) / 100));
+    }
+    if (pauses) {
+      form.append('pause_count', String(pauses.pause_count));
+      form.append('pause_total_seconds', String(pauses.pause_total_seconds));
+      form.append('pause_longest_seconds', String(pauses.pause_longest_seconds));
+      form.append('speech_seconds', String(pauses.speech_seconds));
     }
     const { data } = await api.post(
       `/interviews/${interviewId}/answers/${answerId}/media`,
