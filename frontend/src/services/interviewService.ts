@@ -10,6 +10,10 @@ import type {
   AnswerEvaluation,
   SubmitAnswerResponse,
   SubmitMediaResponse,
+  ProctoringEvent,
+  ProctoringEventBatchResponse,
+  ProctoringEventInput,
+  ProctoringSummary,
 } from '@/types';
 
 const normalizeQuestion = (data: Record<string, unknown>): Question => ({
@@ -260,5 +264,58 @@ export const interviewService = {
   getHistory: async (): Promise<Interview[]> => {
     const { data } = await api.get('/interviews');
     return Array.isArray(data) ? data.map((i: Record<string, unknown>) => normalizeInterview(i)) : [];
+  },
+
+  acknowledgeProctoringConsent: async (interviewId: string): Promise<void> => {
+    await api.post(`/interviews/${interviewId}/proctoring-consent`);
+  },
+
+  submitProctoringEvents: async (
+    interviewId: string,
+    events: ProctoringEventInput[]
+  ): Promise<ProctoringEventBatchResponse> => {
+    const { data } = await api.post(
+      `/interviews/${interviewId}/proctoring-events`,
+      { events }
+    );
+    return data as ProctoringEventBatchResponse;
+  },
+
+  getProctoringEvents: async (interviewId: string): Promise<ProctoringEvent[]> => {
+    const { data } = await api.get(`/interviews/${interviewId}/proctoring-events`);
+    return Array.isArray(data) ? (data as ProctoringEvent[]) : [];
+  },
+
+  getProctoringSummary: async (interviewId: string): Promise<ProctoringSummary> => {
+    const { data } = await api.get(`/interviews/${interviewId}/proctoring-summary`);
+    return data as ProctoringSummary;
+  },
+
+  // pagehide-safe upload: sendBeacon cannot attach the Authorization header,
+  // so keepalive fetch is used instead.
+  flushProctoringEventsKeepalive: (
+    interviewId: string,
+    events: ProctoringEventInput[]
+  ): boolean => {
+    const token = getToken();
+    if (!token || events.length === 0) return false;
+    try {
+      const result = fetch(
+        `${api.defaults.baseURL}/interviews/${interviewId}/proctoring-events`,
+        {
+          method: 'POST',
+          keepalive: true,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ events }),
+        }
+      );
+      void result.catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
   },
 };

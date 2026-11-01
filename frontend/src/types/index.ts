@@ -218,6 +218,61 @@ export interface QuestionResult {
   feedback: string;
 }
 
+export type ProctoringEventType =
+  | 'FACE_NOT_DETECTED'
+  | 'MULTIPLE_FACES_DETECTED'
+  | 'CAMERA_DISCONNECTED'
+  | 'CAMERA_INTERRUPTED'
+  | 'TAB_HIDDEN'
+  | 'WINDOW_FOCUS_LOST';
+
+export type ProctoringSeverity = 'INFO' | 'WARNING';
+
+export type ProctoringMetadataValue = string | number | boolean;
+
+export interface ProctoringEventInput {
+  client_event_id: string;
+  event_type: ProctoringEventType;
+  severity?: ProctoringSeverity;
+  started_at: string;
+  ended_at?: string | null;
+  duration_seconds?: number | null;
+  question_id?: string | null;
+  event_metadata?: Record<string, ProctoringMetadataValue> | null;
+}
+
+export interface ProctoringEvent {
+  id: string;
+  interview_id: string;
+  event_type: ProctoringEventType;
+  severity: ProctoringSeverity;
+  started_at: string;
+  ended_at?: string | null;
+  duration_seconds?: number | null;
+  question_id?: string | null;
+  event_metadata?: Record<string, ProctoringMetadataValue> | null;
+  created_at?: string | null;
+}
+
+export interface ProctoringEventBatchResponse {
+  accepted: number;
+  duplicates: number;
+  rejected: number;
+  limit_reached: boolean;
+  message: string;
+}
+
+export interface ProctoringSummary {
+  interview_id: string;
+  total_events: number;
+  counts: Partial<Record<ProctoringEventType, number>>;
+  durations_seconds: Partial<Record<ProctoringEventType, number>>;
+  first_event_at?: string | null;
+  last_event_at?: string | null;
+  event_window_seconds?: number | null;
+  consent_acknowledged_at?: string | null;
+}
+
 export interface DashboardStats {
   totalInterviews: number;
   completedInterviews: number;

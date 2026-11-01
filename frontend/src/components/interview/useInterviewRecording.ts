@@ -43,6 +43,7 @@ export interface InterviewRecording {
   armed: boolean;
   state: RecordingState;
   mimeType: string | null;
+  stream: MediaStream | null;
   arm: () => Promise<boolean>;
   start: () => boolean;
   stopAndCollect: () => Promise<RecordedMedia | null>;
@@ -64,6 +65,7 @@ export function useInterviewRecording(mode: InterviewMode): InterviewRecording {
   const [armed, setArmed] = useState(false);
   const [state, setState] = useState<RecordingState>('idle');
   const [mimeType, setMimeType] = useState<string | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -84,6 +86,7 @@ export function useInterviewRecording(mode: InterviewMode): InterviewRecording {
     recorderRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    setStream(null);
     chunksRef.current = [];
     discardRef.current = false;
     setArmed(false);
@@ -103,6 +106,7 @@ export function useInterviewRecording(mode: InterviewMode): InterviewRecording {
         video: mode === 'VIDEO',
       });
       streamRef.current = stream;
+      setStream(stream);
       setMimeType(mime);
       setArmed(true);
       return true;
@@ -182,6 +186,7 @@ export function useInterviewRecording(mode: InterviewMode): InterviewRecording {
     armed,
     state,
     mimeType,
+    stream,
     arm,
     start,
     stopAndCollect,

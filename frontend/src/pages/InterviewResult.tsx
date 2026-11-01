@@ -5,7 +5,67 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { interviewService } from '@/services/interviewService';
-import type { InterviewResult as InterviewResultType } from '@/types';
+import type {
+  InterviewMode,
+  InterviewResult as InterviewResultType,
+  ProctoringEvent,
+  ProctoringEventType,
+  ProctoringSummary,
+} from '@/types';
+
+const PROCTORING_LABELS: Record<ProctoringEventType, string> = {
+  FACE_NOT_DETECTED: 'Face not detected',
+  MULTIPLE_FACES_DETECTED: 'Multiple faces detected',
+  CAMERA_DISCONNECTED: 'Camera disconnected',
+  CAMERA_INTERRUPTED: 'Camera interrupted',
+  TAB_HIDDEN: 'Browser tab hidden',
+  WINDOW_FOCUS_LOST: 'Window focus lost',
+};
+
+const formatSeconds = (value: number | null | undefined): string => {
+  const s = Math.round(value ?? 0);
+  return `${s} second${s === 1 ? '' : 's'}`;
+};
+
+const proctoringSummaryLines = (
+  summary: ProctoringSummary
+): string[] => {
+  const count = (t: ProctoringEventType) => summary.counts[t] ?? 0;
+  const duration = (t: ProctoringEventType) => summary.durations_seconds[t];
+  const times = (n: number) => (n === 1 ? 'once' : `${n} times`);
+  const lines: string[] = [];
+  if (count('FACE_NOT_DETECTED') > 0) {
+    lines.push(
+      `Face was not visible ${times(count('FACE_NOT_DETECTED'))} — total ${formatSeconds(duration('FACE_NOT_DETECTED'))}.`
+    );
+  }
+  if (count('MULTIPLE_FACES_DETECTED') > 0) {
+    lines.push(
+      `Multiple faces were detected ${times(count('MULTIPLE_FACES_DETECTED'))} — total ${formatSeconds(duration('MULTIPLE_FACES_DETECTED'))}.`
+    );
+  }
+  if (count('CAMERA_INTERRUPTED') > 0) {
+    lines.push(
+      `Camera interruption detected ${times(count('CAMERA_INTERRUPTED'))} — total ${formatSeconds(duration('CAMERA_INTERRUPTED'))}.`
+    );
+  }
+  if (count('CAMERA_DISCONNECTED') > 0) {
+    lines.push(
+      `Camera was disconnected ${times(count('CAMERA_DISCONNECTED'))}.`
+    );
+  }
+  if (count('TAB_HIDDEN') > 0) {
+    lines.push(
+      `Browser tab was hidden ${times(count('TAB_HIDDEN'))} — total ${formatSeconds(duration('TAB_HIDDEN'))}.`
+    );
+  }
+  if (count('WINDOW_FOCUS_LOST') > 0) {
+    lines.push(
+      `Window focus was lost ${times(count('WINDOW_FOCUS_LOST'))} — total ${formatSeconds(duration('WINDOW_FOCUS_LOST'))}.`
+    );
+  }
+  return lines;
+};
 
 const ScoreCard: React.FC<{ label: string; value: number | null | undefined; color?: string }> = ({
   label,
@@ -27,6 +87,11 @@ export const InterviewResult: React.FC = () => {
   const [result, setResult] = useState<InterviewResultType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [interviewMode, setInterviewMode] = useState<InterviewMode>('TEXT');
+  const [proctoring, setProctoring] = useState<{
+    summary: ProctoringSummary;
+    events: ProctoringEvent[];
+  } | null>(null);
 
   const id = interviewId ?? localStorage.getItem('currentInterviewId');
 
@@ -39,6 +104,18 @@ export const InterviewResult: React.FC = () => {
     setError('');
     try {
       const interview = await interviewService.getById(id);
+      setInterviewMode(interview.interview_mode ?? 'TEXT');
+      if (interview.interview_mode !== 'TEXT') {
+        try {
+          const [summary, events] = await Promise.all([
+            interviewService.getProctoringSummary(id),
+            interviewService.getProctoringEvents(id),
+          ]);
+          setProctoring({ summary, events });
+        } catch {
+          // Proctoring data is additive — never fail the result page.
+        }
+      }
       if (interview.result) {
         setResult(interview.result);
       } else {
@@ -64,6 +141,18 @@ export const InterviewResult: React.FC = () => {
       try {
         const interview = await interviewService.getById(id);
         if (ignore) return;
+        setInterviewMode(interview.interview_mode ?? 'TEXT');
+        if (interview.interview_mode !== 'TEXT') {
+          try {
+            const [summary, events] = await Promise.all([
+              interviewService.getProctoringSummary(id),
+              interviewService.getProctoringEvents(id),
+            ]);
+            if (!ignore) setProctoring({ summary, events });
+          } catch {
+            // Proctoring data is additive — never fail the result page.
+          }
+        }
         if (interview.result) {
           setResult(interview.result);
         } else {
@@ -233,6 +322,60 @@ export const InterviewResult: React.FC = () => {
             </div>
           </Card>
         </div>
+      )}
+
+      {interviewMode !== 'TEXT' && (
+        <Card className="mt-6">
+          <h3 className="mb-1 text-lg font-semibold text-gray-900">
+            Session Integrity Observations
+          </h3>
+          <p className="mb-4 text-xs text-gray-500">
+            Objective observations recorded locally in your browser during the
+            interview. They are not automatic proof of misconduct and do not
+            affect the interview score.
+          </p>
+          {!proctoring ? (
+            <p className="text-sm text-gray-500">
+              Session integrity observations are unavailable.
+            </p>
+          ) : proctoring.summary.total_events === 0 ? (
+            <p className="text-sm text-gray-500">
+              No session integrity observations were recorded during this
+              interview.
+            </p>
+          ) : (
+            <>
+              <p className="mb-3 text-sm text-gray-700">
+                <span className="font-medium">Total observations:</span>{' '}
+                {proctoring.summary.total_events}
+              </p>
+              <ul className="list-inside list-disc text-sm text-gray-700">
+                {proctoringSummaryLines(proctoring.summary).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              {proctoring.events.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="mb-2 text-sm font-semibold text-gray-900">
+                    Timeline
+                  </h4>
+                  <ul className="space-y-1 text-sm text-gray-600">
+                    {proctoring.events.map((event) => (
+                      <li key={event.id}>
+                        <span className="font-mono text-xs text-gray-500">
+                          {new Date(event.started_at).toLocaleTimeString()}
+                        </span>{' '}
+                        — {PROCTORING_LABELS[event.event_type] ?? event.event_type}
+                        {event.duration_seconds != null &&
+                          ` (${formatSeconds(event.duration_seconds)})`}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
       )}
     </DashboardLayout>
   );
