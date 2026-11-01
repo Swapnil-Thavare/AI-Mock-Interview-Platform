@@ -8,6 +8,8 @@ import {
   useInterviewRecording,
   type RecordedMedia,
 } from '@/components/interview/useInterviewRecording';
+import { useProctoring } from '@/components/interview/useProctoring';
+import { ProctoringIndicator } from '@/components/interview/ProctoringIndicator';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Textarea';
@@ -23,6 +25,10 @@ import type {
 } from '@/types';
 
 const QUESTION_TIME = 120;
+// Consent acknowledgement retried in the background — never blocks the
+// interview, and the server keeps the earliest recorded timestamp.
+const CONSENT_MAX_RETRIES = 3;
+const CONSENT_RETRY_DELAY_MS = 10_000;
 
 export const Interview: React.FC = () => {
   const navigate = useNavigate();
@@ -37,6 +43,13 @@ export const Interview: React.FC = () => {
   const [activeMode, setActiveMode] = useState<InterviewMode>('TEXT');
   const [devicesReady, setDevicesReady] = useState(false);
   const recording = useInterviewRecording(activeMode);
+  const proctoring = useProctoring({
+    stream: recording.stream,
+    interviewId,
+    mode: activeMode,
+    activeQuestionId: current?.id ?? null,
+    enabled: devicesReady && activeMode !== 'TEXT',
+  });
   const [mediaUpload, setMediaUpload] = useState<
     'idle' | 'uploading' | 'uploaded' | 'failed' | 'eval_failed'
   >('idle');
@@ -44,6 +57,33 @@ export const Interview: React.FC = () => {
     answerId: string;
     media: RecordedMedia;
   } | null>(null);
+  const consentRetryRef = useRef<number | undefined>(undefined);
+  const consentDoneRef = useRef(false);
+
+  const acknowledgeConsent = useCallback(
+    (attemptsLeft: number) => {
+      if (!interviewId || consentDoneRef.current) return;
+      interviewService
+        .acknowledgeProctoringConsent(interviewId)
+        .then(() => {
+          consentDoneRef.current = true;
+        })
+        .catch(() => {
+          if (attemptsLeft > 0) {
+            consentRetryRef.current = window.setTimeout(
+              () => acknowledgeConsent(attemptsLeft - 1),
+              CONSENT_RETRY_DELAY_MS
+            );
+          }
+        });
+    },
+    [interviewId]
+  );
+
+  useEffect(
+    () => () => window.clearTimeout(consentRetryRef.current),
+    []
+  );
 
   const loadInterview = useCallback(async (id: string) => {
     try {
@@ -304,7 +344,12 @@ export const Interview: React.FC = () => {
       <DashboardLayout>
         <InterviewDeviceCheck
           mode={activeMode}
-          onReady={() => setDevicesReady(true)}
+          onReady={() => {
+            // Fire-and-retry consent — a backend failure is retried in the
+            // background and never blocks or terminates the interview.
+            acknowledgeConsent(CONSENT_MAX_RETRIES);
+            setDevicesReady(true);
+          }}
           onSwitchMode={(mode) => void handleModeSwitch(mode)}
           onCancel={() => navigate('/interview/setup')}
         />
@@ -358,6 +403,10 @@ export const Interview: React.FC = () => {
           }}
         />
       </div>
+
+      {activeMode !== 'TEXT' && devicesReady && (
+        <ProctoringIndicator status={proctoring.status} />
+      )}
 
       <div className="mb-6 h-2 w-full rounded-full bg-gray-200">
         <div

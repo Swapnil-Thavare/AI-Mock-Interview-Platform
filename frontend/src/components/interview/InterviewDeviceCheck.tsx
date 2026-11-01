@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
@@ -55,6 +55,7 @@ export const InterviewDeviceCheck: React.FC<InterviewDeviceCheckProps> = ({
 }) => {
   const media = useInterviewMedia(mode);
   const isVideo = mode === 'VIDEO';
+  const [consented, setConsented] = useState(false);
   const { status } = media;
   const failed =
     status === 'permission_denied' ||
@@ -89,6 +90,43 @@ export const InterviewDeviceCheck: React.FC<InterviewDeviceCheckProps> = ({
           </p>
         )}
 
+        {status === 'ready' && (
+          <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm font-medium text-gray-900">
+              Session integrity monitoring
+            </p>
+            <p className="mt-2 text-sm text-gray-600">
+              During this interview we record session observations:
+            </p>
+            <ul className="mt-1 list-inside list-disc text-sm text-gray-600">
+              {isVideo && (
+                <li>
+                  Whether your face is visible, whether multiple faces appear,
+                  and camera interruptions.
+                </li>
+              )}
+              <li>Browser tab visibility and window focus changes.</li>
+            </ul>
+            <p className="mt-2 text-sm text-gray-600">
+              {isVideo
+                ? 'Camera frames are processed locally in your browser — no camera frames or images are uploaded or stored. '
+                : ''}
+              These observations are not automatic proof of misconduct and do
+              not affect your interview score.
+            </p>
+            <label className="mt-3 flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                checked={consented}
+                onChange={(e) => setConsented(e.target.checked)}
+              />
+              I understand that session integrity monitoring is active during
+              this interview.
+            </label>
+          </div>
+        )}
+
         <div className="mt-6 flex flex-wrap items-center gap-3">
           {status === 'idle' && (
             <Button onClick={() => void media.check()}>
@@ -99,6 +137,7 @@ export const InterviewDeviceCheck: React.FC<InterviewDeviceCheckProps> = ({
           {status === 'ready' && (
             <>
               <Button
+                disabled={!consented}
                 onClick={() => {
                   media.stop();
                   onReady();
