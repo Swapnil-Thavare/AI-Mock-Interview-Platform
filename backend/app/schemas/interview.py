@@ -28,6 +28,13 @@ class MediaKind(str, Enum):
     VIDEO = "VIDEO"
 
 
+class SpeechAnalysisStatus(str, Enum):
+    NONE = "NONE"
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class ProctoringEventType(str, Enum):
     FACE_NOT_DETECTED = "FACE_NOT_DETECTED"
     MULTIPLE_FACES_DETECTED = "MULTIPLE_FACES_DETECTED"
@@ -142,6 +149,42 @@ class InterviewQuestionResponse(InterviewQuestion):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SpeechAnalysisResponse(BaseModel):
+    """Communication-analysis observations for one spoken answer (Phase 7E).
+
+    Descriptive metrics only — no scores. Missing values mean the metric
+    could not be computed (e.g., no pause statistics from the client).
+    """
+    id: UUID
+    interview_id: UUID
+    answer_id: UUID
+    media_id: UUID
+    status: SpeechAnalysisStatus = SpeechAnalysisStatus.PENDING
+    word_count: Optional[int] = None
+    recording_seconds: Optional[float] = None
+    speech_seconds: Optional[float] = None
+    wpm_recording: Optional[float] = None
+    wpm_speech: Optional[float] = None
+    filler_count: Optional[int] = None
+    filler_per_100_words: Optional[float] = None
+    filler_breakdown: Optional[Dict[str, Any]] = None
+    pause_count: Optional[int] = None
+    pause_total_seconds: Optional[float] = None
+    pause_avg_seconds: Optional[float] = None
+    pause_longest_seconds: Optional[float] = None
+    unique_word_ratio: Optional[float] = None
+    top_repeated_words: Optional[List[Dict[str, Any]]] = None
+    structure_summary: Optional[str] = None
+    organization_notes: Optional[List[str]] = None
+    clarity_notes: Optional[str] = None
+    communication_strengths: Optional[List[str]] = None
+    communication_improvements: Optional[List[str]] = None
+    analysis_error: Optional[str] = None
+    analyzed_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InterviewAnswerMediaResponse(BaseModel):
     id: UUID
     interview_id: UUID
@@ -157,6 +200,7 @@ class InterviewAnswerMediaResponse(BaseModel):
     transcript_text: Optional[str] = None
     transcription_error: Optional[str] = None
     transcribed_at: Optional[datetime] = None
+    speech_analysis: Optional[SpeechAnalysisResponse] = None
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 

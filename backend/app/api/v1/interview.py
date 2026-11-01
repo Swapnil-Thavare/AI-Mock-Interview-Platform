@@ -89,11 +89,23 @@ async def upload_answer_media(
     answer_id: uuid.UUID,
     file: UploadFile = File(...),
     duration_seconds: Optional[float] = Form(None),
+    pause_count: Optional[int] = Form(None),
+    pause_total_seconds: Optional[float] = Form(None),
+    pause_longest_seconds: Optional[float] = Form(None),
+    speech_seconds: Optional[float] = Form(None),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
     return await Interview(db).upload_answer_media(
-        current_user.id, interview_id, answer_id, file, duration_seconds
+        current_user.id,
+        interview_id,
+        answer_id,
+        file,
+        duration_seconds,
+        pause_count,
+        pause_total_seconds,
+        pause_longest_seconds,
+        speech_seconds,
     )
 
 

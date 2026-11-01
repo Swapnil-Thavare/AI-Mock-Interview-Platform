@@ -137,6 +137,50 @@ export interface Answer {
 
 export type TranscriptionStatus = 'NONE' | 'PENDING' | 'COMPLETED' | 'FAILED';
 
+export type SpeechAnalysisStatus = 'NONE' | 'PENDING' | 'COMPLETED' | 'FAILED';
+
+export interface FillerBreakdownEntry {
+  count: number;
+  ambiguous: boolean;
+}
+
+export interface SpeechAnalysis {
+  id: string;
+  interview_id: string;
+  answer_id: string;
+  media_id: string;
+  status: SpeechAnalysisStatus;
+  word_count?: number | null;
+  recording_seconds?: number | null;
+  speech_seconds?: number | null;
+  wpm_recording?: number | null;
+  wpm_speech?: number | null;
+  filler_count?: number | null;
+  filler_per_100_words?: number | null;
+  filler_breakdown?: Record<string, FillerBreakdownEntry> | null;
+  pause_count?: number | null;
+  pause_total_seconds?: number | null;
+  pause_avg_seconds?: number | null;
+  pause_longest_seconds?: number | null;
+  unique_word_ratio?: number | null;
+  top_repeated_words?: { word: string; count: number }[] | null;
+  structure_summary?: string | null;
+  organization_notes?: string[] | null;
+  clarity_notes?: string | null;
+  communication_strengths?: string[] | null;
+  communication_improvements?: string[] | null;
+  analysis_error?: string | null;
+  analyzed_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface PauseStatsInput {
+  pause_count: number;
+  pause_total_seconds: number;
+  pause_longest_seconds: number;
+  speech_seconds: number;
+}
+
 export interface AnswerMedia {
   id: string;
   interview_id: string;
@@ -152,6 +196,7 @@ export interface AnswerMedia {
   transcript_text?: string | null;
   transcription_error?: string | null;
   transcribed_at?: string | null;
+  speech_analysis?: SpeechAnalysis | null;
 }
 
 export interface AnswerEvaluation {
