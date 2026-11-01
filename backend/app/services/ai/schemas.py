@@ -72,6 +72,19 @@ class AnswerEvaluationOutput(BaseModel):
     uncertainty_notes: str = Field(default="", description="Notes when the answer cannot be confidently evaluated.")
 
 
+class SpeechCommunicationOutput(BaseModel):
+    """Communication-structure observations for one answer (Phase 7E).
+
+    Descriptive observations only — deliberately no numerical score, and no
+    judgment of technical correctness or candidate character.
+    """
+    structure_summary: str = Field(default="", description="How the answer was organized (e.g., opening claim, supporting points, conclusion).")
+    organization_notes: List[str] = Field(default=[], description="Factual notes on logical organization and flow.")
+    clarity_notes: str = Field(default="", description="Observations on explanation clarity and readability of the response.")
+    communication_strengths: List[str] = Field(default=[], description="Communication strengths observed in this answer.")
+    communication_improvements: List[str] = Field(default=[], description="Concrete communication aspects that could be improved.")
+
+
 class FollowUpQuestionOutput(BaseModel):
     question: str = Field(..., description="The follow-up question text.")
     question_type: str = Field(..., description="One of: technical, behavioral, situational, HR.")

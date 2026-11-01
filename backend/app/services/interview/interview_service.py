@@ -24,6 +24,10 @@ from app.models.interview_answer_media import (
     MediaUploadStatus,
     TranscriptionStatus,
 )
+from app.models.interview_answer_speech_analysis import (
+    InterviewAnswerSpeechAnalysis as InterviewAnswerSpeechAnalysisModel,
+    SpeechAnalysisStatus,
+)
 from app.models.interview_proctoring_event import (
     InterviewProctoringEvent as InterviewProctoringEventModel,
     ProctoringEventType as ProctoringEventTypeModel,
@@ -52,6 +56,10 @@ from app.schemas.interview import (
 from app.services.ai.ai_service import AIService
 from app.services.ai.transcription_provider import default_transcription_provider
 from app.services.interview.interview_query import InterviewQuery
+from app.services.interview.speech_analysis import (
+    compute_speech_metrics,
+    sanitize_pause_stats,
+)
 from app.services.job.job_query import JobDescriptionQuery
 from app.services.match.match_query import MatchQuery
 from app.services.resume.resume_query import ResumeQuery
@@ -364,6 +372,91 @@ class Interview:
         media.transcribed_at = datetime.now(timezone.utc)
         return await self._query.save_media(media)
 
+    async def _analyze_speech(
+        self,
+        interview: InterviewModel,
+        question: Optional[InterviewQuestion],
+        answer: InterviewAnswer,
+        media: InterviewAnswerMediaModel,
+        pause_stats: Dict[str, Optional[float]],
+    ) -> InterviewAnswerSpeechAnalysisModel:
+        """Persist speech-communication observations for one answer.
+
+        Deterministic metrics are recomputed idempotently on every retry;
+        the Gemini communication call only runs while status != COMPLETED, so
+        a previously successful analysis is never repeated. An AI failure is
+        recorded as FAILED (deterministic metrics preserved) and never raises
+        into the upload pipeline.
+        """
+        analysis = await self._query.get_speech_analysis_for_answer(answer.id)
+        if (
+            analysis is not None
+            and analysis.status == SpeechAnalysisStatus.COMPLETED
+        ):
+            return analysis
+        if analysis is None:
+            analysis = InterviewAnswerSpeechAnalysisModel(
+                answer_id=answer.id,
+                media_id=media.id,
+                interview_id=interview.id,
+            )
+
+        transcript = (media.transcript_text or "").strip()
+        metrics = compute_speech_metrics(
+            transcript,
+            media.duration_seconds,
+            pause_stats.get("speech_seconds"),
+        )
+        for field, value in metrics.items():
+            setattr(analysis, field, value)
+        analysis.pause_count = pause_stats.get("pause_count")
+        analysis.pause_total_seconds = pause_stats.get("pause_total_seconds")
+        analysis.pause_longest_seconds = pause_stats.get(
+            "pause_longest_seconds"
+        )
+        analysis.pause_avg_seconds = (
+            round(
+                analysis.pause_total_seconds / analysis.pause_count, 3
+            )
+            if analysis.pause_count
+            and analysis.pause_total_seconds is not None
+            else None
+        )
+        analysis.analyzed_at = datetime.now(timezone.utc)
+        analysis.analysis_error = None
+
+        try:
+            communication = await self._ai.analyze_communication(
+                {
+                    "question_text": (
+                        question.question_text if question else ""
+                    ),
+                    "expected_focus": (
+                        question.expected_focus if question else ""
+                    ),
+                },
+                transcript,
+            )
+            analysis.structure_summary = communication.structure_summary
+            analysis.organization_notes = communication.organization_notes
+            analysis.clarity_notes = communication.clarity_notes
+            analysis.communication_strengths = (
+                communication.communication_strengths
+            )
+            analysis.communication_improvements = (
+                communication.communication_improvements
+            )
+            analysis.status = SpeechAnalysisStatus.COMPLETED
+        except Exception as exc:
+            # Deterministic metrics stay persisted; only the AI observations
+            # are missing. Retry re-runs this call — never the transcription.
+            analysis.status = SpeechAnalysisStatus.FAILED
+            analysis.analysis_error = (
+                getattr(exc, "message", None) or type(exc).__name__
+            )[:512]
+
+        return await self._query.save_speech_analysis(analysis)
+
     async def create_interview(
         self, user_id: uuid.UUID, payload: InterviewCreate
     ) -> InterviewResponse:
@@ -544,6 +637,10 @@ class Interview:
         answer_id: uuid.UUID,
         file: UploadFile,
         duration_seconds: Optional[float] = None,
+        pause_count: Optional[int] = None,
+        pause_total_seconds: Optional[float] = None,
+        pause_longest_seconds: Optional[float] = None,
+        speech_seconds: Optional[float] = None,
     ) -> InterviewAnswerMediaResponse:
         interview = await self._get_owned_interview(user_id, interview_id)
         if interview.status == InterviewStatus.COMPLETED:
@@ -660,6 +757,27 @@ class Interview:
             (q for q in interview.questions if q.id == answer.question_id),
             None,
         )
+
+        # Phase 7E — speech analysis: deterministic metrics plus Gemini
+        # communication observations on the transcript already in hand.
+        # Never retranscribes; a completed analysis is left untouched; an AI
+        # failure records status=FAILED without failing the upload.
+        analysis_row: Optional[InterviewAnswerSpeechAnalysisModel] = None
+        if media.transcript_text:
+            analysis_row = await self._analyze_speech(
+                interview,
+                question,
+                answer,
+                media,
+                sanitize_pause_stats(
+                    media.duration_seconds,
+                    pause_count,
+                    pause_total_seconds,
+                    pause_longest_seconds,
+                    speech_seconds,
+                ),
+            )
+
         evaluation_schema: Optional[InterviewAnswerEvaluation] = None
         follow_up_generated = False
         if answer.evaluation:
@@ -678,9 +796,12 @@ class Interview:
         next_q = await self._get_next_question(interview)
         is_complete = next_q is None and not follow_up_generated
 
-        # Attach the just-saved media in memory — serializing answer.media
-        # must not trigger a lazy load in the async session.
+        # Attach the just-saved media and its analysis in memory — the
+        # intervening refresh() calls expire relationship attributes, so
+        # both must be attached after them to serialize without a lazy load
+        # in the async session.
         answer.media = media
+        media.speech_analysis = analysis_row
         return InterviewAnswerMediaSubmitResponse(
             media=InterviewAnswerMediaResponse.model_validate(media),
             answer=InterviewAnswerResponse.model_validate(answer),

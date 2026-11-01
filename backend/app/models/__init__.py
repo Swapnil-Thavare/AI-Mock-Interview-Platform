@@ -9,6 +9,10 @@ from .interview_answer_media import (
     MediaUploadStatus,
     TranscriptionStatus,
 )
+from .interview_answer_speech_analysis import (
+    InterviewAnswerSpeechAnalysis,
+    SpeechAnalysisStatus,
+)
 from .interview_proctoring_event import (
     InterviewProctoringEvent,
     ProctoringEventType,
@@ -42,5 +46,7 @@ __all__ = [
     "MediaKind",
     "MediaUploadStatus",
     "TranscriptionStatus",
+    "InterviewAnswerSpeechAnalysis",
+    "SpeechAnalysisStatus",
     "InterviewResult",
 ]

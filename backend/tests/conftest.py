@@ -176,6 +176,14 @@ def mock_gemini(monkeypatch):
                     confidence=85,
                     uncertainty_notes="",
                 )
+            if name == "SpeechCommunicationOutput":
+                return ai_schemas.SpeechCommunicationOutput(
+                    structure_summary="The answer states a main point, then supports it.",
+                    organization_notes=["Clear opening claim", "Logical ordering"],
+                    clarity_notes="The explanation is easy to follow.",
+                    communication_strengths=["Direct opening"],
+                    communication_improvements=["Could summarize at the end"],
+                )
             if name == "FollowUpQuestionOutput":
                 return ai_schemas.FollowUpQuestionOutput(
                     question="Can you explain how FastAPI handles dependency injection?",

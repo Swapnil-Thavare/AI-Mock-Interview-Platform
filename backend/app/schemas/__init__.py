@@ -18,6 +18,7 @@ from .interview import (
     ProctoringEventType,
     ProctoringSeverity,
     ProctoringSummaryResponse,
+    SpeechAnalysisResponse,
     SubmitAnswerResponse,
 )
 from .job_description import (
@@ -63,4 +64,5 @@ __all__ = [
     "ProctoringEventBatchResponse",
     "ProctoringEventResponse",
     "ProctoringSummaryResponse",
+    "SpeechAnalysisResponse",
 ]

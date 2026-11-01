@@ -10,6 +10,9 @@ from app.models.base import created_at_field, updated_at_field
 
 if TYPE_CHECKING:
     from app.models.interview_answer import InterviewAnswer
+    from app.models.interview_answer_speech_analysis import (
+        InterviewAnswerSpeechAnalysis,
+    )
 
 
 class MediaKind(str, enum.Enum):
@@ -126,3 +129,6 @@ class InterviewAnswerMedia(SQLModel, table=True):
     updated_at: datetime | None = updated_at_field()
 
     answer: "InterviewAnswer" = Relationship(back_populates="media")
+    speech_analysis: Optional["InterviewAnswerSpeechAnalysis"] = Relationship(
+        sa_relationship_kwargs={"uselist": False}
+    )
