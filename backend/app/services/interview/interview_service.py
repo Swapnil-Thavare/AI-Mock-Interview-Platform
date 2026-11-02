@@ -36,6 +36,7 @@ from app.models.interview_proctoring_event import (
 from app.models.interview_question import InterviewQuestion, QuestionType
 from app.models.interview_result import InterviewResult as InterviewResultModel
 from app.schemas.interview import (
+    CommunicationAggregate,
     InterviewAnswer as InterviewAnswerSchema,
     InterviewAnswerEvaluation,
     InterviewAnswerMediaResponse,
@@ -43,6 +44,7 @@ from app.schemas.interview import (
     InterviewAnswerResponse,
     InterviewCreate,
     InterviewQuestionResponse,
+    InterviewReportResponse,
     InterviewResponse,
     InterviewResult as InterviewResultSchema,
     InterviewResultResponse,
@@ -51,10 +53,18 @@ from app.schemas.interview import (
     ProctoringEventIn,
     ProctoringEventResponse,
     ProctoringSummaryResponse,
+    ReportAnswerStatus,
+    ReportMediaInfo,
+    ReportOverview,
+    ReportProctoringEvent,
+    ReportQuestionBlock,
+    SessionIntegrityReport,
+    SpeechAnalysisResponse,
     SubmitAnswerResponse,
 )
 from app.services.ai.ai_service import AIService
 from app.services.ai.transcription_provider import default_transcription_provider
+from app.services.auth.auth_query import UserQuery
 from app.services.interview.interview_query import InterviewQuery
 from app.services.interview.speech_analysis import (
     compute_speech_metrics,
@@ -124,6 +134,13 @@ _DEFAULT_PROCTORING_SEVERITY = {
     ProctoringEventTypeModel.TAB_HIDDEN: ProctoringSeverityModel.INFO,
     ProctoringEventTypeModel.WINDOW_FOCUS_LOST: ProctoringSeverityModel.INFO,
 }
+
+# Neutral wording rendered with the session-integrity section of the report.
+_PROCTORING_DISCLAIMER = (
+    "Session-integrity observations were recorded locally in the candidate's "
+    "browser during the interview. They are neutral client-side observations, "
+    "are not proof of misconduct, and do not affect the interview score."
+)
 
 
 class Interview:
@@ -961,6 +978,266 @@ class Interview:
             skipped=sum(1 for a in interview.answers if not a.answer_text.strip()),
         )
 
+    # ------------------------------------------------------------------
+    # Phase 7F — aggregated interview report (read model, never regenerates)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _classify_answer_status(
+        answer: Optional[InterviewAnswer],
+        interview_mode: InterviewModeModel,
+    ) -> ReportAnswerStatus:
+        """Derive the per-question answer state for report display.
+
+        An AUDIO/VIDEO voice placeholder (empty text awaiting a recording, or
+        a recording awaiting/failed transcription) is reported as
+        pending/unavailable — never misclassified as skipped.
+        """
+        if answer is None:
+            return ReportAnswerStatus.UNAVAILABLE
+        if answer.answer_text.strip():
+            return ReportAnswerStatus.ANSWERED
+        media = answer.media
+        if interview_mode == InterviewModeModel.TEXT:
+            # TEXT has no voice placeholder — an empty answer was skipped.
+            return ReportAnswerStatus.SKIPPED
+        if media is None:
+            return ReportAnswerStatus.PENDING
+        if (
+            media.status == MediaUploadStatus.FAILED
+            or media.transcription_status == TranscriptionStatus.FAILED
+        ):
+            return ReportAnswerStatus.UNAVAILABLE
+        if media.transcription_status == TranscriptionStatus.COMPLETED:
+            return ReportAnswerStatus.UNAVAILABLE
+        return ReportAnswerStatus.PENDING
+
+    @staticmethod
+    def _build_report_question(
+        question: InterviewQuestion,
+        answer: Optional[InterviewAnswer],
+        interview_mode: InterviewModeModel,
+    ) -> ReportQuestionBlock:
+        evaluation = None
+        if answer is not None and answer.evaluation:
+            try:
+                evaluation = InterviewAnswerEvaluation.model_validate(
+                    answer.evaluation
+                )
+            except Exception:
+                evaluation = None
+
+        media_info: Optional[ReportMediaInfo] = None
+        speech: Optional[SpeechAnalysisResponse] = None
+        if answer is not None and answer.media is not None:
+            media = answer.media
+            media_info = ReportMediaInfo(
+                transcription_status=media.transcription_status,
+                transcript_text=media.transcript_text,
+                duration_seconds=media.duration_seconds,
+            )
+            if media.speech_analysis is not None:
+                speech = SpeechAnalysisResponse.model_validate(
+                    media.speech_analysis
+                )
+
+        return ReportQuestionBlock(
+            question_id=question.id,
+            order=question.order,
+            question_text=question.question_text,
+            question_type=question.question_type,
+            difficulty=question.difficulty,
+            topic=question.topic,
+            category=question.category,
+            expected_focus=question.expected_focus,
+            is_follow_up=question.is_follow_up,
+            parent_question_id=question.parent_question_id,
+            follow_up_reason=question.follow_up_reason,
+            answer_id=answer.id if answer else None,
+            answer_text=(
+                answer.answer_text if answer and answer.answer_text else None
+            ),
+            answer_status=Interview._classify_answer_status(
+                answer, interview_mode
+            ),
+            score=answer.score if answer else None,
+            evaluated_at=answer.evaluated_at if answer else None,
+            evaluation=evaluation,
+            media=media_info,
+            speech_analysis=speech,
+        )
+
+    @staticmethod
+    def _communication_aggregate(
+        answers: List[InterviewAnswer],
+    ) -> CommunicationAggregate:
+        """Aggregate completed speech analyses; failed/missing rows are ignored."""
+        analyses = [
+            a.media.speech_analysis
+            for a in answers
+            if a.media is not None
+            and a.media.speech_analysis is not None
+            and a.media.speech_analysis.status == SpeechAnalysisStatus.COMPLETED
+        ]
+        if not analyses:
+            return CommunicationAggregate()
+
+        def _avg(values: List[float]) -> Optional[float]:
+            return (
+                round(sum(values) / len(values), 1) if values else None
+            )
+
+        definite = 0
+        possible = 0
+        for analysis in analyses:
+            breakdown = analysis.filler_breakdown or {}
+            for entry in breakdown.values():
+                if not isinstance(entry, dict):
+                    continue
+                count = entry.get("count")
+                if not isinstance(count, (int, float)):
+                    continue
+                if entry.get("ambiguous"):
+                    possible += int(count)
+                else:
+                    definite += int(count)
+
+        pauses = [
+            a.pause_total_seconds
+            for a in analyses
+            if a.pause_total_seconds is not None
+        ]
+        return CommunicationAggregate(
+            answers_analyzed=len(analyses),
+            avg_wpm_recording=_avg(
+                [a.wpm_recording for a in analyses if a.wpm_recording is not None]
+            ),
+            avg_wpm_speech=_avg(
+                [a.wpm_speech for a in analyses if a.wpm_speech is not None]
+            ),
+            definite_filler_total=definite,
+            possible_filler_total=possible,
+            total_pause_seconds=(
+                round(sum(pauses), 3) if pauses else None
+            ),
+        )
+
+    async def get_report(
+        self, user_id: uuid.UUID, interview_id: uuid.UUID
+    ) -> InterviewReportResponse:
+        """Compose the aggregated report for a completed interview.
+
+        Read-only assembly of persisted data — questions, answers,
+        evaluations, media/transcripts, speech analyses, and proctoring
+        events. Never re-scores, re-evaluates, or calls the AI provider.
+        """
+        interview = await self._get_owned_interview(user_id, interview_id)
+        # Query the result row directly — the relationship can hold a stale
+        # "loaded as None" state when the same session completed the interview.
+        stmt = select(InterviewResultModel).where(
+            InterviewResultModel.interview_id == interview.id
+        )
+        result = (await self._db.exec(stmt)).first()
+        if interview.status != InterviewStatus.COMPLETED or result is None:
+            raise CustomException(404, "Interview report is not available")
+
+        owner = await UserQuery(self._db).get_by_id(interview.user_id)
+        candidate_name = owner.full_name if owner else ""
+
+        job_title: Optional[str] = None
+        company: Optional[str] = None
+        if interview.job_description_id:
+            job = await JobDescriptionQuery(self._db).get_by_id(
+                interview.job_description_id
+            )
+            if job:
+                job_title = job.title or (
+                    (job.analysis or {}).get("job_title") or None
+                )
+                company = job.company
+
+        questions = sorted(interview.questions, key=lambda q: q.order)
+        answers_by_question = {a.question_id: a for a in interview.answers}
+        blocks = [
+            self._build_report_question(
+                q, answers_by_question.get(q.id), interview.interview_mode
+            )
+            for q in questions
+        ]
+        counts = {
+            ReportAnswerStatus.ANSWERED: 0,
+            ReportAnswerStatus.SKIPPED: 0,
+            ReportAnswerStatus.PENDING: 0,
+            ReportAnswerStatus.UNAVAILABLE: 0,
+        }
+        for block in blocks:
+            counts[block.answer_status] += 1
+
+        elapsed: Optional[float] = None
+        if interview.completed_at and interview.created_at:
+            elapsed = max(
+                0.0,
+                (
+                    self._aware(interview.completed_at)
+                    - self._aware(interview.created_at)
+                ).total_seconds(),
+            )
+
+        voice_mode = interview.interview_mode != InterviewModeModel.TEXT
+        communication = (
+            self._communication_aggregate(interview.answers)
+            if voice_mode
+            else None
+        )
+
+        session_integrity: Optional[SessionIntegrityReport] = None
+        if voice_mode:
+            events = await self._query.get_proctoring_events(interview.id)
+            session_integrity = SessionIntegrityReport(
+                summary=self._compute_proctoring_summary(interview, events),
+                events=[
+                    ReportProctoringEvent(
+                        event_type=e.event_type,
+                        severity=e.severity,
+                        started_at=e.started_at,
+                        ended_at=e.ended_at,
+                        duration_seconds=e.duration_seconds,
+                        question_id=e.question_id,
+                    )
+                    for e in events
+                ],
+                disclaimer=_PROCTORING_DISCLAIMER,
+            )
+
+        return InterviewReportResponse(
+            report_id=result.id,
+            generated_at=result.created_at,
+            candidate_name=candidate_name,
+            job_title=job_title,
+            company=company,
+            overview=ReportOverview(
+                interview_id=interview.id,
+                title=interview.title,
+                interview_mode=interview.interview_mode,
+                difficulty=interview.difficulty,
+                status=interview.status,
+                created_at=interview.created_at,
+                completed_at=interview.completed_at,
+                configured_duration_minutes=interview.duration,
+                elapsed_seconds=elapsed,
+                total_questions=len(questions),
+                answered_count=counts[ReportAnswerStatus.ANSWERED],
+                skipped_count=counts[ReportAnswerStatus.SKIPPED],
+                pending_count=counts[ReportAnswerStatus.PENDING],
+                unavailable_count=counts[ReportAnswerStatus.UNAVAILABLE],
+                follow_up_count=sum(1 for q in questions if q.is_follow_up),
+            ),
+            result=InterviewResultResponse.model_validate(result),
+            questions=blocks,
+            communication=communication,
+            session_integrity=session_integrity,
+        )
+
     async def acknowledge_proctoring_consent(
         self, user_id: uuid.UUID, interview_id: uuid.UUID
     ) -> InterviewResponse:
@@ -1151,7 +1428,11 @@ class Interview:
     ) -> ProctoringSummaryResponse:
         interview = await self._get_owned_interview(user_id, interview_id)
         events = await self._query.get_proctoring_events(interview.id)
+        return self._compute_proctoring_summary(interview, events)
 
+    def _compute_proctoring_summary(
+        self, interview: InterviewModel, events
+    ) -> ProctoringSummaryResponse:
         counts: Dict[str, int] = {}
         durations: Dict[str, float] = {}
         first: Optional[datetime] = None

@@ -339,3 +339,119 @@ class ProctoringSummaryResponse(BaseModel):
     event_window_seconds: Optional[float] = None
     consent_acknowledged_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase 7F — aggregated interview report (read model over persisted data).
+# ---------------------------------------------------------------------------
+
+
+class ReportAnswerStatus(str, Enum):
+    """Derived state of a question's answer for report display.
+
+    "pending"/"unavailable" deliberately exist so an AUDIO/VIDEO placeholder
+    is never misclassified as "skipped" while a recording or transcription is
+    still outstanding — or after one has failed.
+    """
+    ANSWERED = "answered"
+    SKIPPED = "skipped"
+    PENDING = "pending"
+    UNAVAILABLE = "unavailable"
+
+
+class ReportMediaInfo(BaseModel):
+    """Media fields needed by the report — storage internals excluded."""
+    transcription_status: TranscriptionStatus = TranscriptionStatus.NONE
+    transcript_text: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReportQuestionBlock(BaseModel):
+    """One question with its answer, evaluation, and voice-pipeline data."""
+    question_id: UUID
+    order: int
+    question_text: str
+    question_type: QuestionType
+    difficulty: str
+    topic: Optional[str] = None
+    category: Optional[str] = None
+    expected_focus: Optional[str] = None
+    is_follow_up: bool = False
+    parent_question_id: Optional[UUID] = None
+    follow_up_reason: Optional[str] = None
+    answer_id: Optional[UUID] = None
+    answer_text: Optional[str] = None
+    answer_status: ReportAnswerStatus
+    score: Optional[float] = None
+    evaluated_at: Optional[datetime] = None
+    evaluation: Optional[InterviewAnswerEvaluation] = None
+    media: Optional[ReportMediaInfo] = None
+    speech_analysis: Optional[SpeechAnalysisResponse] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CommunicationAggregate(BaseModel):
+    """Session-level speech-metric aggregates from completed analyses only.
+
+    Descriptive observations — no communication score is derived here.
+    """
+    answers_analyzed: int = 0
+    avg_wpm_recording: Optional[float] = None
+    avg_wpm_speech: Optional[float] = None
+    definite_filler_total: int = 0
+    possible_filler_total: int = 0
+    total_pause_seconds: Optional[float] = None
+
+
+class ReportProctoringEvent(BaseModel):
+    """A proctoring event as rendered in the report (raw metadata excluded)."""
+    event_type: ProctoringEventType
+    severity: ProctoringSeverity
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    question_id: Optional[UUID] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SessionIntegrityReport(BaseModel):
+    summary: ProctoringSummaryResponse
+    events: List[ReportProctoringEvent] = []
+    disclaimer: str
+
+
+class ReportOverview(BaseModel):
+    interview_id: UUID
+    title: str
+    interview_mode: InterviewMode
+    difficulty: str
+    status: InterviewStatus
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    configured_duration_minutes: int
+    elapsed_seconds: Optional[float] = None
+    total_questions: int = 0
+    answered_count: int = 0
+    skipped_count: int = 0
+    pending_count: int = 0
+    unavailable_count: int = 0
+    follow_up_count: int = 0
+
+
+class InterviewReportResponse(BaseModel):
+    """Aggregated, read-only report for a completed interview (Phase 7F).
+
+    Composed entirely from persisted data; never regenerates or re-scores.
+    """
+    report_id: UUID
+    generated_at: Optional[datetime] = None
+    candidate_name: str = ""
+    job_title: Optional[str] = None
+    company: Optional[str] = None
+    overview: ReportOverview
+    result: InterviewResultResponse
+    questions: List[ReportQuestionBlock] = []
+    communication: Optional[CommunicationAggregate] = None
+    session_integrity: Optional[SessionIntegrityReport] = None
+    model_config = ConfigDict(from_attributes=True)
