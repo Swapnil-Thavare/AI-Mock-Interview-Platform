@@ -13,6 +13,7 @@ from app.schemas import (
     InterviewAnswerMediaSubmitResponse,
     InterviewCreate,
     InterviewModeUpdate,
+    InterviewReportResponse,
     InterviewResponse,
     InterviewResultResponse,
     ProctoringEventBatchIn,
@@ -118,6 +119,15 @@ async def complete_interview(
     return await Interview(db).complete_interview(
         current_user.id, interview_id
     )
+
+
+@router.get("/{interview_id}/report", response_model=InterviewReportResponse)
+async def get_interview_report(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).get_report(current_user.id, interview_id)
 
 
 @router.post(

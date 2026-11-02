@@ -8,6 +8,19 @@
   }
 }
 
+/* Print-to-PDF report output (Phase 7F). */
+@page {
+  size: A4;
+  margin: 16mm 14mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff;
+  }
+}
+
 @layer utilities {
   .btn {
     @apply inline-flex items-center justify-center rounded-lg px-4 py-2 font-medium transition focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1;

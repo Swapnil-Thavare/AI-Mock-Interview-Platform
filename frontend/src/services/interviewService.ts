@@ -7,6 +7,7 @@ import type {
   Answer,
   AnswerMedia,
   InterviewResult,
+  InterviewReport,
   AnswerEvaluation,
   SubmitAnswerResponse,
   SubmitMediaResponse,
@@ -15,6 +16,9 @@ import type {
   ProctoringEventInput,
   ProctoringSummary,
   PauseStatsInput,
+  ReportQuestionBlock,
+  ReportAnswerStatus,
+  SpeechAnalysis,
 } from '@/types';
 
 const normalizeQuestion = (data: Record<string, unknown>): Question => ({
@@ -159,6 +163,85 @@ const questionTypesFromSetup = (setup: InterviewSetup): string[] => {
 
 const getToken = () => localStorage.getItem('token') ?? '';
 
+const VALID_ANSWER_STATUSES: ReportAnswerStatus[] = [
+  'answered',
+  'skipped',
+  'pending',
+  'unavailable',
+];
+
+const normalizeReportQuestion = (
+  data: Record<string, unknown>
+): ReportQuestionBlock => ({
+  question_id: String(data.question_id ?? ''),
+  order: (data.order as number) ?? 0,
+  question_text: (data.question_text as string) ?? '',
+  question_type: (data.question_type as string) ?? 'technical',
+  difficulty: (data.difficulty as string) ?? 'medium',
+  topic: (data.topic as string) ?? null,
+  category: (data.category as string) ?? null,
+  expected_focus: (data.expected_focus as string) ?? null,
+  is_follow_up: Boolean(data.is_follow_up),
+  parent_question_id: data.parent_question_id
+    ? String(data.parent_question_id)
+    : null,
+  follow_up_reason: (data.follow_up_reason as string) ?? null,
+  answer_id: data.answer_id ? String(data.answer_id) : null,
+  answer_text: (data.answer_text as string) ?? null,
+  answer_status: VALID_ANSWER_STATUSES.includes(
+    data.answer_status as ReportAnswerStatus
+  )
+    ? (data.answer_status as ReportAnswerStatus)
+    : 'unavailable',
+  score: (data.score as number) ?? null,
+  evaluated_at: (data.evaluated_at as string) ?? null,
+  evaluation: data.evaluation
+    ? normalizeEvaluation(data.evaluation as Record<string, unknown>)
+    : null,
+  media: (data.media as ReportQuestionBlock['media']) ?? null,
+  speech_analysis:
+    (data.speech_analysis as SpeechAnalysis) ?? null,
+});
+
+const normalizeReport = (data: Record<string, unknown>): InterviewReport => {
+  const overview = (data.overview ?? {}) as Record<string, unknown>;
+  return {
+    report_id: String(data.report_id ?? ''),
+    generated_at: (data.generated_at as string) ?? null,
+    candidate_name: (data.candidate_name as string) ?? '',
+    job_title: (data.job_title as string) ?? null,
+    company: (data.company as string) ?? null,
+    overview: {
+      interview_id: String(overview.interview_id ?? ''),
+      title: (overview.title as string) ?? 'Mock Interview',
+      interview_mode:
+        ((overview.interview_mode as InterviewMode) ?? 'TEXT') as InterviewMode,
+      difficulty: (overview.difficulty as string) ?? 'medium',
+      status: (overview.status as string) ?? '',
+      created_at: (overview.created_at as string) ?? null,
+      completed_at: (overview.completed_at as string) ?? null,
+      configured_duration_minutes:
+        (overview.configured_duration_minutes as number) ?? 0,
+      elapsed_seconds: (overview.elapsed_seconds as number) ?? null,
+      total_questions: (overview.total_questions as number) ?? 0,
+      answered_count: (overview.answered_count as number) ?? 0,
+      skipped_count: (overview.skipped_count as number) ?? 0,
+      pending_count: (overview.pending_count as number) ?? 0,
+      unavailable_count: (overview.unavailable_count as number) ?? 0,
+      follow_up_count: (overview.follow_up_count as number) ?? 0,
+    },
+    result: normalizeResult((data.result ?? {}) as Record<string, unknown>),
+    questions: Array.isArray(data.questions)
+      ? (data.questions as Record<string, unknown>[]).map(
+          normalizeReportQuestion
+        )
+      : [],
+    communication: (data.communication as InterviewReport['communication']) ?? null,
+    session_integrity:
+      (data.session_integrity as InterviewReport['session_integrity']) ?? null,
+  };
+};
+
 const getByIdInFlight = new Map<string, Promise<Interview>>();
 const completeInFlight = new Map<string, Promise<InterviewResult>>();
 
@@ -267,6 +350,11 @@ export const interviewService = {
 
   end: async (interviewId: string): Promise<InterviewResult> => {
     return interviewService.complete(interviewId);
+  },
+
+  getReport: async (interviewId: string): Promise<InterviewReport> => {
+    const { data } = await api.get(`/interviews/${interviewId}/report`);
+    return normalizeReport(data as Record<string, unknown>);
   },
 
   getHistory: async (): Promise<Interview[]> => {
