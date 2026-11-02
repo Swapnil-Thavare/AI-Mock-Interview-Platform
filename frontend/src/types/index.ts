@@ -325,6 +325,99 @@ export interface DashboardStats {
   improvementRate: number;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 7F — aggregated interview report (GET /interviews/{id}/report)
+// ---------------------------------------------------------------------------
+
+export type ReportAnswerStatus =
+  | 'answered'
+  | 'skipped'
+  | 'pending'
+  | 'unavailable';
+
+export interface ReportMediaInfo {
+  transcription_status: TranscriptionStatus;
+  transcript_text?: string | null;
+  duration_seconds?: number | null;
+}
+
+export interface ReportQuestionBlock {
+  question_id: string;
+  order: number;
+  question_text: string;
+  question_type: string;
+  difficulty: string;
+  topic?: string | null;
+  category?: string | null;
+  expected_focus?: string | null;
+  is_follow_up: boolean;
+  parent_question_id?: string | null;
+  follow_up_reason?: string | null;
+  answer_id?: string | null;
+  answer_text?: string | null;
+  answer_status: ReportAnswerStatus;
+  score?: number | null;
+  evaluated_at?: string | null;
+  evaluation?: AnswerEvaluation | null;
+  media?: ReportMediaInfo | null;
+  speech_analysis?: SpeechAnalysis | null;
+}
+
+export interface CommunicationAggregate {
+  answers_analyzed: number;
+  avg_wpm_recording?: number | null;
+  avg_wpm_speech?: number | null;
+  definite_filler_total: number;
+  possible_filler_total: number;
+  total_pause_seconds?: number | null;
+}
+
+export interface ReportProctoringEvent {
+  event_type: ProctoringEventType;
+  severity: ProctoringSeverity;
+  started_at: string;
+  ended_at?: string | null;
+  duration_seconds?: number | null;
+  question_id?: string | null;
+}
+
+export interface SessionIntegrityReport {
+  summary: ProctoringSummary;
+  events: ReportProctoringEvent[];
+  disclaimer: string;
+}
+
+export interface ReportOverview {
+  interview_id: string;
+  title: string;
+  interview_mode: InterviewMode;
+  difficulty: string;
+  status: string;
+  created_at?: string | null;
+  completed_at?: string | null;
+  configured_duration_minutes: number;
+  elapsed_seconds?: number | null;
+  total_questions: number;
+  answered_count: number;
+  skipped_count: number;
+  pending_count: number;
+  unavailable_count: number;
+  follow_up_count: number;
+}
+
+export interface InterviewReport {
+  report_id: string;
+  generated_at?: string | null;
+  candidate_name: string;
+  job_title?: string | null;
+  company?: string | null;
+  overview: ReportOverview;
+  result: InterviewResult;
+  questions: ReportQuestionBlock[];
+  communication?: CommunicationAggregate | null;
+  session_integrity?: SessionIntegrityReport | null;
+}
+
 export interface ResumeJDMatch {
   id: string;
   resume_id: string;

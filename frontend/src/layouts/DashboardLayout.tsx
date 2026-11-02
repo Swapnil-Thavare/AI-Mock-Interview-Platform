@@ -22,7 +22,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="fixed top-0 left-0 right-0 z-10 border-b border-gray-200 bg-white px-6 py-4 shadow-sm">
+      <header className="fixed top-0 left-0 right-0 z-10 border-b border-gray-200 bg-white px-6 py-4 shadow-sm print:hidden">
         <div className="flex items-center justify-between">
           <NavLink to="/dashboard" className="text-xl font-bold text-primary-700">
             IntelliInterview
@@ -39,7 +39,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
         </div>
       </header>
 
-      <div className="pt-16">
+      <div className="pt-16 print:pt-0">
         {/* Mobile navigation */}
         <nav className="flex gap-1 overflow-x-auto border-b border-gray-200 bg-white px-4 py-2 md:hidden">
           {navItems.map((item) => (
@@ -60,7 +60,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
         </nav>
 
         {/* Desktop sidebar */}
-        <aside className="fixed bottom-0 left-0 top-16 hidden w-56 border-r border-gray-200 bg-white p-4 md:block">
+        <aside className="fixed bottom-0 left-0 top-16 hidden w-56 border-r border-gray-200 bg-white p-4 md:block print:hidden">
           <nav className="space-y-1">
             {navItems.map((item) => (
               <NavLink
@@ -80,7 +80,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
           </nav>
         </aside>
 
-        <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 md:pl-64">
+        <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 md:pl-64 print:p-0 md:print:pl-6">
           <div className="mx-auto max-w-5xl">{children}</div>
         </main>
       </div>
