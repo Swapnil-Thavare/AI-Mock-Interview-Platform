@@ -121,6 +121,21 @@ async def complete_interview(
     )
 
 
+@router.post(
+    "/{interview_id}/answers/{answer_id}/media/reprocess",
+    response_model=InterviewAnswerMediaSubmitResponse,
+)
+async def reprocess_answer_media(
+    interview_id: uuid.UUID,
+    answer_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).reprocess_answer_media(
+        current_user.id, interview_id, answer_id
+    )
+
+
 @router.get("/{interview_id}/report", response_model=InterviewReportResponse)
 async def get_interview_report(
     interview_id: uuid.UUID,
