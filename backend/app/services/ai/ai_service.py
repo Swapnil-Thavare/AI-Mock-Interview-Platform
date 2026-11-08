@@ -18,6 +18,7 @@ from app.services.ai.schemas import (
     JobDescriptionAnalysisOutput,
     ResumeAnalysisOutput,
     ResumeJDMatchOutput,
+    SpeechCommunicationOutput,
 )
 
 _RESUME_PROMPT = """You are an expert resume reviewer. Given the resume text below, extract structured facts.
@@ -138,6 +139,30 @@ Job description analysis:
 Difficulty: {difficulty}
 """
 
+_COMMUNICATION_PROMPT = """You are a communication coach reviewing a transcript of one spoken interview answer.
+Describe ONLY the communication structure and explanation quality of the answer.
+Rules:
+- Analyze how the answer is organized: opening, supporting points, flow, conclusion.
+- Note clarity of explanation and ease of following the response.
+- Do NOT evaluate technical correctness or the content's factual accuracy.
+- Do NOT infer or comment on honesty, intelligence, personality, confidence, accent, or competence.
+- Do NOT produce any score or rating — observations only.
+- Use neutral, factual language such as "The answer opens with..." and "The response lists...".
+- If the transcript is too short or unclear to assess structure, say so plainly in structure_summary and leave lists empty.
+- Return structured JSON only.
+
+Question asked:
+{question}
+
+Expected focus of the question (context only — do not evaluate against it):
+{expected_focus}
+
+Answer transcript:
+---
+{transcript}
+---
+"""
+
 _FINAL_REPORT_PROMPT = """You are an expert technical interviewer creating a final interview report.
 Use the interview configuration, resume analysis, job description analysis, and all question/answer/evaluation data below.
 Rules:
@@ -255,6 +280,25 @@ class AIService:
             difficulty=difficulty,
         )
         return await self._provider.complete_json(prompt, FollowUpQuestionOutput)
+
+    async def analyze_communication(
+        self,
+        question: Dict[str, Any],
+        transcript: str,
+    ) -> SpeechCommunicationOutput:
+        """Communication-structure observations for one transcript (7E).
+
+        Deliberately separate from evaluate_answer — no scoring, no
+        correctness judgment.
+        """
+        prompt = _COMMUNICATION_PROMPT.format(
+            question=question.get("question_text", ""),
+            expected_focus=question.get("expected_focus", ""),
+            transcript=transcript[:20000],
+        )
+        return await self._provider.complete_json(
+            prompt, SpeechCommunicationOutput
+        )
 
     async def generate_interview_report(
         self,

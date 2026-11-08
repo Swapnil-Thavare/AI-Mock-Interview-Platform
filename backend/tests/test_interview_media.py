@@ -98,7 +98,7 @@ async def test_audio_media_upload_success(db_client, auth_headers, monkeypatch):
         url, files=files, data={"duration_seconds": "12.5"}, headers=auth_headers
     )
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["media"]
     assert data["answer_id"] == answer_id
     assert data["interview_id"] == interview["id"]
     assert data["media_type"] == "AUDIO"
@@ -107,8 +107,8 @@ async def test_audio_media_upload_success(db_client, auth_headers, monkeypatch):
     assert data["status"] == "UPLOADED"
     assert data["uploaded_at"]
     assert data["duration_seconds"] == 12.5
-    assert data["storage_key"].startswith("interviews/")
-    assert "recording" not in data["storage_key"]
+    # Internal storage layout is never exposed to the client.
+    assert "storage_key" not in data
 
     # Metadata is attached to the answer on subsequent fetches.
     fetched = await db_client.get(
@@ -130,7 +130,7 @@ async def test_video_media_upload_success(db_client, auth_headers, monkeypatch):
     )
     response = await db_client.post(url, files=files, headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["media_type"] == "VIDEO"
+    assert response.json()["media"]["media_type"] == "VIDEO"
 
 
 async def test_media_upload_unauthenticated(db_client, auth_headers, monkeypatch):
@@ -323,8 +323,8 @@ async def test_media_upload_storage_failure_marks_failed(
     )
     retry = await db_client.post(url, files=files, headers=auth_headers)
     assert retry.status_code == 200
-    assert retry.json()["status"] == "UPLOADED"
-    assert retry.json()["id"] == media["id"]
+    assert retry.json()["media"]["status"] == "UPLOADED"
+    assert retry.json()["media"]["id"] == media["id"]
 
 
 async def test_media_upload_retry_reuses_record(
@@ -340,7 +340,8 @@ async def test_media_upload_retry_reuses_record(
     assert first.status_code == 200
     second = await db_client.post(url, files=files, headers=auth_headers)
     assert second.status_code == 200
-    assert second.json()["id"] == first.json()["id"]
-    assert second.json()["storage_key"] == first.json()["storage_key"]
-    # Same storage object overwritten — one upload call per attempt.
+    assert second.json()["media"]["id"] == first.json()["media"]["id"]
+    # Retry reuses the same server-generated storage key — the storage
+    # fake saw one call per attempt against the identical key.
     assert len(mock_media_storage) == 2
+    assert mock_media_storage[0][0] == mock_media_storage[1][0]

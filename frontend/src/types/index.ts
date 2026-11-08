@@ -132,6 +132,53 @@ export interface Answer {
   skipped: boolean;
   timeTaken: number;
   submittedAt: string;
+  media?: AnswerMedia;
+}
+
+export type TranscriptionStatus = 'NONE' | 'PENDING' | 'COMPLETED' | 'FAILED';
+
+export type SpeechAnalysisStatus = 'NONE' | 'PENDING' | 'COMPLETED' | 'FAILED';
+
+export interface FillerBreakdownEntry {
+  count: number;
+  ambiguous: boolean;
+}
+
+export interface SpeechAnalysis {
+  id: string;
+  interview_id: string;
+  answer_id: string;
+  media_id: string;
+  status: SpeechAnalysisStatus;
+  word_count?: number | null;
+  recording_seconds?: number | null;
+  speech_seconds?: number | null;
+  wpm_recording?: number | null;
+  wpm_speech?: number | null;
+  filler_count?: number | null;
+  filler_per_100_words?: number | null;
+  filler_breakdown?: Record<string, FillerBreakdownEntry> | null;
+  pause_count?: number | null;
+  pause_total_seconds?: number | null;
+  pause_avg_seconds?: number | null;
+  pause_longest_seconds?: number | null;
+  unique_word_ratio?: number | null;
+  top_repeated_words?: { word: string; count: number }[] | null;
+  structure_summary?: string | null;
+  organization_notes?: string[] | null;
+  clarity_notes?: string | null;
+  communication_strengths?: string[] | null;
+  communication_improvements?: string[] | null;
+  analysis_error?: string | null;
+  analyzed_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface PauseStatsInput {
+  pause_count: number;
+  pause_total_seconds: number;
+  pause_longest_seconds: number;
+  speech_seconds: number;
 }
 
 export interface AnswerMedia {
@@ -140,11 +187,15 @@ export interface AnswerMedia {
   answer_id: string;
   media_type: 'AUDIO' | 'VIDEO';
   mime_type: string;
-  storage_key: string;
   file_size: number;
   duration_seconds?: number | null;
   status: 'PENDING' | 'UPLOADED' | 'FAILED';
   uploaded_at?: string | null;
+  transcription_status?: TranscriptionStatus;
+  transcript_text?: string | null;
+  transcription_error?: string | null;
+  transcribed_at?: string | null;
+  speech_analysis?: SpeechAnalysis | null;
 }
 
 export interface AnswerEvaluation {
@@ -171,6 +222,12 @@ export interface SubmitAnswerResponse {
   follow_up_generated: boolean;
   is_complete: boolean;
   message: string;
+}
+
+// POST /interviews/{id}/answers/{answer_id}/media — voice-first pipeline
+// (upload → transcribe → evaluate) returns media + progression data.
+export interface SubmitMediaResponse extends SubmitAnswerResponse {
+  media: AnswerMedia;
 }
 
 export interface InterviewResult {
@@ -205,11 +262,159 @@ export interface QuestionResult {
   feedback: string;
 }
 
+export type ProctoringEventType =
+  | 'FACE_NOT_DETECTED'
+  | 'MULTIPLE_FACES_DETECTED'
+  | 'CAMERA_DISCONNECTED'
+  | 'CAMERA_INTERRUPTED'
+  | 'TAB_HIDDEN'
+  | 'WINDOW_FOCUS_LOST';
+
+export type ProctoringSeverity = 'INFO' | 'WARNING';
+
+export type ProctoringMetadataValue = string | number | boolean;
+
+export interface ProctoringEventInput {
+  client_event_id: string;
+  event_type: ProctoringEventType;
+  severity?: ProctoringSeverity;
+  started_at: string;
+  ended_at?: string | null;
+  duration_seconds?: number | null;
+  question_id?: string | null;
+  event_metadata?: Record<string, ProctoringMetadataValue> | null;
+}
+
+export interface ProctoringEvent {
+  id: string;
+  interview_id: string;
+  event_type: ProctoringEventType;
+  severity: ProctoringSeverity;
+  started_at: string;
+  ended_at?: string | null;
+  duration_seconds?: number | null;
+  question_id?: string | null;
+  event_metadata?: Record<string, ProctoringMetadataValue> | null;
+  created_at?: string | null;
+}
+
+export interface ProctoringEventBatchResponse {
+  accepted: number;
+  duplicates: number;
+  rejected: number;
+  limit_reached: boolean;
+  message: string;
+}
+
+export interface ProctoringSummary {
+  interview_id: string;
+  total_events: number;
+  counts: Partial<Record<ProctoringEventType, number>>;
+  durations_seconds: Partial<Record<ProctoringEventType, number>>;
+  first_event_at?: string | null;
+  last_event_at?: string | null;
+  event_window_seconds?: number | null;
+  consent_acknowledged_at?: string | null;
+}
+
 export interface DashboardStats {
   totalInterviews: number;
   completedInterviews: number;
   averageScore: number;
   improvementRate: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7F — aggregated interview report (GET /interviews/{id}/report)
+// ---------------------------------------------------------------------------
+
+export type ReportAnswerStatus =
+  | 'answered'
+  | 'skipped'
+  | 'pending'
+  | 'unavailable';
+
+export interface ReportMediaInfo {
+  transcription_status: TranscriptionStatus;
+  transcript_text?: string | null;
+  duration_seconds?: number | null;
+}
+
+export interface ReportQuestionBlock {
+  question_id: string;
+  order: number;
+  question_text: string;
+  question_type: string;
+  difficulty: string;
+  topic?: string | null;
+  category?: string | null;
+  expected_focus?: string | null;
+  is_follow_up: boolean;
+  parent_question_id?: string | null;
+  follow_up_reason?: string | null;
+  answer_id?: string | null;
+  answer_text?: string | null;
+  answer_status: ReportAnswerStatus;
+  score?: number | null;
+  evaluated_at?: string | null;
+  evaluation?: AnswerEvaluation | null;
+  media?: ReportMediaInfo | null;
+  speech_analysis?: SpeechAnalysis | null;
+}
+
+export interface CommunicationAggregate {
+  answers_analyzed: number;
+  avg_wpm_recording?: number | null;
+  avg_wpm_speech?: number | null;
+  definite_filler_total: number;
+  possible_filler_total: number;
+  total_pause_seconds?: number | null;
+}
+
+export interface ReportProctoringEvent {
+  event_type: ProctoringEventType;
+  severity: ProctoringSeverity;
+  started_at: string;
+  ended_at?: string | null;
+  duration_seconds?: number | null;
+  question_id?: string | null;
+}
+
+export interface SessionIntegrityReport {
+  summary: ProctoringSummary;
+  events: ReportProctoringEvent[];
+  disclaimer: string;
+}
+
+export interface ReportOverview {
+  interview_id: string;
+  title: string;
+  interview_mode: InterviewMode;
+  difficulty: string;
+  status: string;
+  created_at?: string | null;
+  completed_at?: string | null;
+  configured_duration_minutes: number;
+  elapsed_seconds?: number | null;
+  total_questions: number;
+  answered_count: number;
+  skipped_count: number;
+  pending_count: number;
+  unavailable_count: number;
+  follow_up_count: number;
+}
+
+export interface InterviewReport {
+  report_id: string;
+  generated_at?: string | null;
+  candidate_name: string;
+  job_title?: string | null;
+  company?: string | null;
+  overview: ReportOverview;
+  result: InterviewResult;
+  questions: ReportQuestionBlock[];
+  communication?: CommunicationAggregate | null;
+  session_integrity?: SessionIntegrityReport | null;
 }
 
 export interface ResumeJDMatch {

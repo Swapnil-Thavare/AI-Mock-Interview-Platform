@@ -7,8 +7,18 @@ import type {
   Answer,
   AnswerMedia,
   InterviewResult,
+  InterviewReport,
   AnswerEvaluation,
   SubmitAnswerResponse,
+  SubmitMediaResponse,
+  ProctoringEvent,
+  ProctoringEventBatchResponse,
+  ProctoringEventInput,
+  ProctoringSummary,
+  PauseStatsInput,
+  ReportQuestionBlock,
+  ReportAnswerStatus,
+  SpeechAnalysis,
 } from '@/types';
 
 const normalizeQuestion = (data: Record<string, unknown>): Question => ({
@@ -126,6 +136,22 @@ const normalizeAnswer = (data: Record<string, unknown>): Answer => ({
   timeTaken: (data.timeTaken as number) ?? 0,
   submittedAt:
     (data.created_at as string) ?? (data.submittedAt as string) ?? '',
+  media: data.media ? (data.media as AnswerMedia) : undefined,
+});
+
+const normalizeSubmitResponse = (
+  raw: Record<string, unknown>
+): SubmitAnswerResponse => ({
+  answer: normalizeAnswer((raw.answer ?? {}) as Record<string, unknown>),
+  evaluation: raw.evaluation
+    ? normalizeEvaluation(raw.evaluation as Record<string, unknown>)
+    : undefined,
+  next_question: raw.next_question
+    ? normalizeQuestion(raw.next_question as Record<string, unknown>)
+    : undefined,
+  follow_up_generated: Boolean(raw.follow_up_generated),
+  is_complete: Boolean(raw.is_complete),
+  message: (raw.message as string) ?? 'Answer submitted',
 });
 
 const questionTypesFromSetup = (setup: InterviewSetup): string[] => {
@@ -137,8 +163,100 @@ const questionTypesFromSetup = (setup: InterviewSetup): string[] => {
 
 const getToken = () => localStorage.getItem('token') ?? '';
 
+const VALID_ANSWER_STATUSES: ReportAnswerStatus[] = [
+  'answered',
+  'skipped',
+  'pending',
+  'unavailable',
+];
+
+const normalizeReportQuestion = (
+  data: Record<string, unknown>
+): ReportQuestionBlock => ({
+  question_id: String(data.question_id ?? ''),
+  order: (data.order as number) ?? 0,
+  question_text: (data.question_text as string) ?? '',
+  question_type: (data.question_type as string) ?? 'technical',
+  difficulty: (data.difficulty as string) ?? 'medium',
+  topic: (data.topic as string) ?? null,
+  category: (data.category as string) ?? null,
+  expected_focus: (data.expected_focus as string) ?? null,
+  is_follow_up: Boolean(data.is_follow_up),
+  parent_question_id: data.parent_question_id
+    ? String(data.parent_question_id)
+    : null,
+  follow_up_reason: (data.follow_up_reason as string) ?? null,
+  answer_id: data.answer_id ? String(data.answer_id) : null,
+  answer_text: (data.answer_text as string) ?? null,
+  answer_status: VALID_ANSWER_STATUSES.includes(
+    data.answer_status as ReportAnswerStatus
+  )
+    ? (data.answer_status as ReportAnswerStatus)
+    : 'unavailable',
+  score: (data.score as number) ?? null,
+  evaluated_at: (data.evaluated_at as string) ?? null,
+  evaluation: data.evaluation
+    ? normalizeEvaluation(data.evaluation as Record<string, unknown>)
+    : null,
+  media: (data.media as ReportQuestionBlock['media']) ?? null,
+  speech_analysis:
+    (data.speech_analysis as SpeechAnalysis) ?? null,
+});
+
+const normalizeReport = (data: Record<string, unknown>): InterviewReport => {
+  const overview = (data.overview ?? {}) as Record<string, unknown>;
+  return {
+    report_id: String(data.report_id ?? ''),
+    generated_at: (data.generated_at as string) ?? null,
+    candidate_name: (data.candidate_name as string) ?? '',
+    job_title: (data.job_title as string) ?? null,
+    company: (data.company as string) ?? null,
+    overview: {
+      interview_id: String(overview.interview_id ?? ''),
+      title: (overview.title as string) ?? 'Mock Interview',
+      interview_mode:
+        ((overview.interview_mode as InterviewMode) ?? 'TEXT') as InterviewMode,
+      difficulty: (overview.difficulty as string) ?? 'medium',
+      status: (overview.status as string) ?? '',
+      created_at: (overview.created_at as string) ?? null,
+      completed_at: (overview.completed_at as string) ?? null,
+      configured_duration_minutes:
+        (overview.configured_duration_minutes as number) ?? 0,
+      elapsed_seconds: (overview.elapsed_seconds as number) ?? null,
+      total_questions: (overview.total_questions as number) ?? 0,
+      answered_count: (overview.answered_count as number) ?? 0,
+      skipped_count: (overview.skipped_count as number) ?? 0,
+      pending_count: (overview.pending_count as number) ?? 0,
+      unavailable_count: (overview.unavailable_count as number) ?? 0,
+      follow_up_count: (overview.follow_up_count as number) ?? 0,
+    },
+    result: normalizeResult((data.result ?? {}) as Record<string, unknown>),
+    questions: Array.isArray(data.questions)
+      ? (data.questions as Record<string, unknown>[]).map(
+          normalizeReportQuestion
+        )
+      : [],
+    communication: (data.communication as InterviewReport['communication']) ?? null,
+    session_integrity:
+      (data.session_integrity as InterviewReport['session_integrity']) ?? null,
+  };
+};
+
 const getByIdInFlight = new Map<string, Promise<Interview>>();
 const completeInFlight = new Map<string, Promise<InterviewResult>>();
+
+// Must stay aligned with backend INTERVIEW_MEDIA_MAX_MB (14 MB keeps
+// Gemini inline transcription requests under the provider's 20 MB
+// request-size ceiling once base64 overhead is applied).
+export const MAX_RECORDING_MB = 14;
+const MAX_RECORDING_BYTES = MAX_RECORDING_MB * 1024 * 1024;
+
+// The media endpoint can run upload + transcription + evaluation +
+// communication analysis sequentially — bound it generously above the
+// backend TRANSCRIPTION_TIMEOUT (90s) so a legitimate long answer still
+// completes. A timeout here is safe: retries are idempotent server-side.
+const MEDIA_PROCESSING_TIMEOUT_MS = 180_000;
+const STANDARD_LONG_TIMEOUT_MS = 120_000;
 
 const cacheKey = (id: string) => `${getToken()}:${id}`;
 
@@ -168,19 +286,49 @@ export const interviewService = {
     interviewId: string,
     answerId: string,
     blob: Blob,
-    durationSeconds?: number
-  ): Promise<AnswerMedia> => {
+    durationSeconds?: number,
+    pauses?: PauseStatsInput
+  ): Promise<SubmitMediaResponse> => {
     const form = new FormData();
     form.append('file', blob, 'recording');
     if (durationSeconds !== undefined) {
       form.append('duration_seconds', String(Math.round(durationSeconds * 100) / 100));
     }
+    if (pauses) {
+      form.append('pause_count', String(pauses.pause_count));
+      form.append('pause_total_seconds', String(pauses.pause_total_seconds));
+      form.append('pause_longest_seconds', String(pauses.pause_longest_seconds));
+      form.append('speech_seconds', String(pauses.speech_seconds));
+    }
     const { data } = await api.post(
       `/interviews/${interviewId}/answers/${answerId}/media`,
-      form
+      form,
+      { timeout: MEDIA_PROCESSING_TIMEOUT_MS }
     );
-    return data as AnswerMedia;
+    const raw = (data ?? {}) as Record<string, unknown>;
+    return {
+      ...normalizeSubmitResponse(raw),
+      media: (raw.media ?? {}) as AnswerMedia,
+    };
   },
+
+  reprocessMedia: async (
+    interviewId: string,
+    answerId: string
+  ): Promise<SubmitMediaResponse> => {
+    const { data } = await api.post(
+      `/interviews/${interviewId}/answers/${answerId}/media/reprocess`,
+      undefined,
+      { timeout: MEDIA_PROCESSING_TIMEOUT_MS }
+    );
+    const raw = (data ?? {}) as Record<string, unknown>;
+    return {
+      ...normalizeSubmitResponse(raw),
+      media: (raw.media ?? {}) as AnswerMedia,
+    };
+  },
+
+  isRecordingOversized: (blob: Blob): boolean => blob.size > MAX_RECORDING_BYTES,
 
   getById: async (id: string): Promise<Interview> => {
     const key = cacheKey(id);
@@ -209,22 +357,18 @@ export const interviewService = {
     _questionId: string,
     answer: Answer
   ): Promise<SubmitAnswerResponse> => {
-    const { data } = await api.post(`/interviews/${interviewId}/answers`, {
-      question_id: answer.questionId,
-      answer_text: answer.skipped ? '' : answer.text,
-      skipped: answer.skipped,
-    });
-    const raw = (data ?? {}) as Record<string, unknown>;
-    return {
-      answer: normalizeAnswer((raw.answer ?? {}) as Record<string, unknown>),
-      evaluation: raw.evaluation ? normalizeEvaluation(raw.evaluation as Record<string, unknown>) : undefined,
-      next_question: raw.next_question
-        ? normalizeQuestion(raw.next_question as Record<string, unknown>)
-        : undefined,
-      follow_up_generated: Boolean(raw.follow_up_generated),
-      is_complete: Boolean(raw.is_complete),
-      message: (raw.message as string) ?? 'Answer submitted',
-    };
+    const { data } = await api.post(
+      `/interviews/${interviewId}/answers`,
+      {
+        question_id: answer.questionId,
+        answer_text: answer.skipped ? '' : answer.text,
+        skipped: answer.skipped,
+      },
+      // Answer evaluation is a single AI call — bound it but keep retries
+      // safe (duplicate submissions are rejected server-side).
+      { timeout: STANDARD_LONG_TIMEOUT_MS }
+    );
+    return normalizeSubmitResponse((data ?? {}) as Record<string, unknown>);
   },
 
   complete: async (interviewId: string): Promise<InterviewResult> => {
@@ -233,7 +377,9 @@ export const interviewService = {
     if (pending) return pending;
 
     const promise = api
-      .post(`/interviews/${interviewId}/complete`)
+      .post(`/interviews/${interviewId}/complete`, undefined, {
+        timeout: STANDARD_LONG_TIMEOUT_MS,
+      })
       .then(({ data }) => normalizeResult(data as Record<string, unknown>))
       .finally(() => {
         completeInFlight.delete(key);
@@ -246,8 +392,66 @@ export const interviewService = {
     return interviewService.complete(interviewId);
   },
 
+  getReport: async (interviewId: string): Promise<InterviewReport> => {
+    const { data } = await api.get(`/interviews/${interviewId}/report`);
+    return normalizeReport(data as Record<string, unknown>);
+  },
+
   getHistory: async (): Promise<Interview[]> => {
     const { data } = await api.get('/interviews');
     return Array.isArray(data) ? data.map((i: Record<string, unknown>) => normalizeInterview(i)) : [];
+  },
+
+  acknowledgeProctoringConsent: async (interviewId: string): Promise<void> => {
+    await api.post(`/interviews/${interviewId}/proctoring-consent`);
+  },
+
+  submitProctoringEvents: async (
+    interviewId: string,
+    events: ProctoringEventInput[]
+  ): Promise<ProctoringEventBatchResponse> => {
+    const { data } = await api.post(
+      `/interviews/${interviewId}/proctoring-events`,
+      { events }
+    );
+    return data as ProctoringEventBatchResponse;
+  },
+
+  getProctoringEvents: async (interviewId: string): Promise<ProctoringEvent[]> => {
+    const { data } = await api.get(`/interviews/${interviewId}/proctoring-events`);
+    return Array.isArray(data) ? (data as ProctoringEvent[]) : [];
+  },
+
+  getProctoringSummary: async (interviewId: string): Promise<ProctoringSummary> => {
+    const { data } = await api.get(`/interviews/${interviewId}/proctoring-summary`);
+    return data as ProctoringSummary;
+  },
+
+  // pagehide-safe upload: sendBeacon cannot attach the Authorization header,
+  // so keepalive fetch is used instead.
+  flushProctoringEventsKeepalive: (
+    interviewId: string,
+    events: ProctoringEventInput[]
+  ): boolean => {
+    const token = getToken();
+    if (!token || events.length === 0) return false;
+    try {
+      const result = fetch(
+        `${api.defaults.baseURL}/interviews/${interviewId}/proctoring-events`,
+        {
+          method: 'POST',
+          keepalive: true,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ events }),
+        }
+      );
+      void result.catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
   },
 };

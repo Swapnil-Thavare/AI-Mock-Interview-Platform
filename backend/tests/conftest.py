@@ -176,6 +176,14 @@ def mock_gemini(monkeypatch):
                     confidence=85,
                     uncertainty_notes="",
                 )
+            if name == "SpeechCommunicationOutput":
+                return ai_schemas.SpeechCommunicationOutput(
+                    structure_summary="The answer states a main point, then supports it.",
+                    organization_notes=["Clear opening claim", "Logical ordering"],
+                    clarity_notes="The explanation is easy to follow.",
+                    communication_strengths=["Direct opening"],
+                    communication_improvements=["Could summarize at the end"],
+                )
             if name == "FollowUpQuestionOutput":
                 return ai_schemas.FollowUpQuestionOutput(
                     question="Can you explain how FastAPI handles dependency injection?",
@@ -216,6 +224,35 @@ def mock_gemini(monkeypatch):
     monkeypatch.setattr(
         "app.services.ai.ai_service.GeminiProvider", FakeGeminiProvider
     )
+
+
+@pytest.fixture(autouse=True)
+def mock_transcription(monkeypatch):
+    """Replace the transcription provider with a deterministic fake.
+
+    Tests can steer it via the returned class attributes:
+    FakeTranscriptionProvider.transcript / .error / .calls.
+    """
+
+    class FakeTranscriptionProvider:
+        transcript = "This is the candidate's spoken answer."
+        error = None
+        calls = []
+
+        async def transcribe(self, content, mime_type):
+            FakeTranscriptionProvider.calls.append(mime_type)
+            if FakeTranscriptionProvider.error is not None:
+                raise FakeTranscriptionProvider.error
+            return FakeTranscriptionProvider.transcript
+
+    monkeypatch.setattr(
+        "app.services.ai.transcription_provider.GeminiTranscriptionProvider",
+        FakeTranscriptionProvider,
+    )
+    yield FakeTranscriptionProvider
+    FakeTranscriptionProvider.transcript = "This is the candidate's spoken answer."
+    FakeTranscriptionProvider.error = None
+    FakeTranscriptionProvider.calls = []
 
 
 @pytest.fixture(autouse=True)

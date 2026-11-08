@@ -28,9 +28,37 @@ class MediaKind(str, Enum):
     VIDEO = "VIDEO"
 
 
+class SpeechAnalysisStatus(str, Enum):
+    NONE = "NONE"
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class ProctoringEventType(str, Enum):
+    FACE_NOT_DETECTED = "FACE_NOT_DETECTED"
+    MULTIPLE_FACES_DETECTED = "MULTIPLE_FACES_DETECTED"
+    CAMERA_DISCONNECTED = "CAMERA_DISCONNECTED"
+    CAMERA_INTERRUPTED = "CAMERA_INTERRUPTED"
+    TAB_HIDDEN = "TAB_HIDDEN"
+    WINDOW_FOCUS_LOST = "WINDOW_FOCUS_LOST"
+
+
+class ProctoringSeverity(str, Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+
+
 class MediaUploadStatus(str, Enum):
     PENDING = "PENDING"
     UPLOADED = "UPLOADED"
+    FAILED = "FAILED"
+
+
+class TranscriptionStatus(str, Enum):
+    NONE = "NONE"
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
 
@@ -121,17 +149,57 @@ class InterviewQuestionResponse(InterviewQuestion):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SpeechAnalysisResponse(BaseModel):
+    """Communication-analysis observations for one spoken answer (Phase 7E).
+
+    Descriptive metrics only — no scores. Missing values mean the metric
+    could not be computed (e.g., no pause statistics from the client).
+    """
+    id: UUID
+    interview_id: UUID
+    answer_id: UUID
+    media_id: UUID
+    status: SpeechAnalysisStatus = SpeechAnalysisStatus.PENDING
+    word_count: Optional[int] = None
+    recording_seconds: Optional[float] = None
+    speech_seconds: Optional[float] = None
+    wpm_recording: Optional[float] = None
+    wpm_speech: Optional[float] = None
+    filler_count: Optional[int] = None
+    filler_per_100_words: Optional[float] = None
+    filler_breakdown: Optional[Dict[str, Any]] = None
+    pause_count: Optional[int] = None
+    pause_total_seconds: Optional[float] = None
+    pause_avg_seconds: Optional[float] = None
+    pause_longest_seconds: Optional[float] = None
+    unique_word_ratio: Optional[float] = None
+    top_repeated_words: Optional[List[Dict[str, Any]]] = None
+    structure_summary: Optional[str] = None
+    organization_notes: Optional[List[str]] = None
+    clarity_notes: Optional[str] = None
+    communication_strengths: Optional[List[str]] = None
+    communication_improvements: Optional[List[str]] = None
+    analysis_error: Optional[str] = None
+    analyzed_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InterviewAnswerMediaResponse(BaseModel):
     id: UUID
     interview_id: UUID
     answer_id: UUID
     media_type: MediaKind
     mime_type: str
-    storage_key: str
     file_size: int
     duration_seconds: Optional[float] = None
     status: MediaUploadStatus
     uploaded_at: Optional[datetime] = None
+    transcription_status: TranscriptionStatus = TranscriptionStatus.NONE
+    transcript_text: Optional[str] = None
+    transcription_error: Optional[str] = None
+    transcribed_at: Optional[datetime] = None
+    speech_analysis: Optional[SpeechAnalysisResponse] = None
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -182,6 +250,7 @@ class InterviewResponse(BaseModel):
     questions: List[InterviewQuestionResponse] = []
     answers: List[InterviewAnswerResponse] = []
     result: Optional[InterviewResultResponse] = None
+    proctoring_consent_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
@@ -194,4 +263,194 @@ class SubmitAnswerResponse(BaseModel):
     follow_up_generated: bool = False
     is_complete: bool = False
     message: str = "Answer submitted"
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InterviewAnswerMediaSubmitResponse(BaseModel):
+    """Response contract for the media upload endpoint.
+
+    The upload endpoint finishes the voice-first pipeline (upload →
+    transcribe → evaluate → follow-up), so in addition to the media record
+    it returns the same progression data a submit-answer call would.
+    """
+    media: InterviewAnswerMediaResponse
+    answer: InterviewAnswerResponse
+    evaluation: Optional[InterviewAnswerEvaluation] = None
+    next_question: Optional[InterviewQuestionResponse] = None
+    follow_up_generated: bool = False
+    is_complete: bool = False
+    message: str = "Media uploaded"
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringEventIn(BaseModel):
+    """A single client-reported proctoring observation.
+
+    Events represent continuous occurrences (periods), not detection frames.
+    Severity is optional; the server derives a default from the event type.
+    """
+    client_event_id: UUID
+    event_type: ProctoringEventType
+    severity: Optional[ProctoringSeverity] = None
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = Field(default=None, ge=0, le=86400)
+    question_id: Optional[UUID] = None
+    event_metadata: Optional[Dict[str, Any]] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringEventBatchIn(BaseModel):
+    events: List[ProctoringEventIn] = Field(default=[], max_length=100)
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringEventBatchResponse(BaseModel):
+    accepted: int = 0
+    duplicates: int = 0
+    rejected: int = 0
+    limit_reached: bool = False
+    message: str = "Proctoring events processed"
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringEventResponse(BaseModel):
+    id: UUID
+    interview_id: UUID
+    event_type: ProctoringEventType
+    severity: ProctoringSeverity
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    question_id: Optional[UUID] = None
+    event_metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProctoringSummaryResponse(BaseModel):
+    interview_id: UUID
+    total_events: int = 0
+    counts: Dict[str, int] = {}
+    durations_seconds: Dict[str, float] = {}
+    first_event_at: Optional[datetime] = None
+    last_event_at: Optional[datetime] = None
+    event_window_seconds: Optional[float] = None
+    consent_acknowledged_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase 7F — aggregated interview report (read model over persisted data).
+# ---------------------------------------------------------------------------
+
+
+class ReportAnswerStatus(str, Enum):
+    """Derived state of a question's answer for report display.
+
+    "pending"/"unavailable" deliberately exist so an AUDIO/VIDEO placeholder
+    is never misclassified as "skipped" while a recording or transcription is
+    still outstanding — or after one has failed.
+    """
+    ANSWERED = "answered"
+    SKIPPED = "skipped"
+    PENDING = "pending"
+    UNAVAILABLE = "unavailable"
+
+
+class ReportMediaInfo(BaseModel):
+    """Media fields needed by the report — storage internals excluded."""
+    transcription_status: TranscriptionStatus = TranscriptionStatus.NONE
+    transcript_text: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReportQuestionBlock(BaseModel):
+    """One question with its answer, evaluation, and voice-pipeline data."""
+    question_id: UUID
+    order: int
+    question_text: str
+    question_type: QuestionType
+    difficulty: str
+    topic: Optional[str] = None
+    category: Optional[str] = None
+    expected_focus: Optional[str] = None
+    is_follow_up: bool = False
+    parent_question_id: Optional[UUID] = None
+    follow_up_reason: Optional[str] = None
+    answer_id: Optional[UUID] = None
+    answer_text: Optional[str] = None
+    answer_status: ReportAnswerStatus
+    score: Optional[float] = None
+    evaluated_at: Optional[datetime] = None
+    evaluation: Optional[InterviewAnswerEvaluation] = None
+    media: Optional[ReportMediaInfo] = None
+    speech_analysis: Optional[SpeechAnalysisResponse] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CommunicationAggregate(BaseModel):
+    """Session-level speech-metric aggregates from completed analyses only.
+
+    Descriptive observations — no communication score is derived here.
+    """
+    answers_analyzed: int = 0
+    avg_wpm_recording: Optional[float] = None
+    avg_wpm_speech: Optional[float] = None
+    definite_filler_total: int = 0
+    possible_filler_total: int = 0
+    total_pause_seconds: Optional[float] = None
+
+
+class ReportProctoringEvent(BaseModel):
+    """A proctoring event as rendered in the report (raw metadata excluded)."""
+    event_type: ProctoringEventType
+    severity: ProctoringSeverity
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    question_id: Optional[UUID] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SessionIntegrityReport(BaseModel):
+    summary: ProctoringSummaryResponse
+    events: List[ReportProctoringEvent] = []
+    disclaimer: str
+
+
+class ReportOverview(BaseModel):
+    interview_id: UUID
+    title: str
+    interview_mode: InterviewMode
+    difficulty: str
+    status: InterviewStatus
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    configured_duration_minutes: int
+    elapsed_seconds: Optional[float] = None
+    total_questions: int = 0
+    answered_count: int = 0
+    skipped_count: int = 0
+    pending_count: int = 0
+    unavailable_count: int = 0
+    follow_up_count: int = 0
+
+
+class InterviewReportResponse(BaseModel):
+    """Aggregated, read-only report for a completed interview (Phase 7F).
+
+    Composed entirely from persisted data; never regenerates or re-scores.
+    """
+    report_id: UUID
+    generated_at: Optional[datetime] = None
+    candidate_name: str = ""
+    job_title: Optional[str] = None
+    company: Optional[str] = None
+    overview: ReportOverview
+    result: InterviewResultResponse
+    questions: List[ReportQuestionBlock] = []
+    communication: Optional[CommunicationAggregate] = None
+    session_integrity: Optional[SessionIntegrityReport] = None
     model_config = ConfigDict(from_attributes=True)

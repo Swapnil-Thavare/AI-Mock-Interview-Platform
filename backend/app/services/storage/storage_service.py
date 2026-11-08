@@ -50,10 +50,42 @@ def upload_media_file(storage_key: str, content: bytes, content_type: str) -> st
         get_supabase_client().storage.from_(settings.SUPABASE_MEDIA_BUCKET).upload(
             path=storage_key,
             file=content,
-            file_options={"content-type": content_type},
+            # Upsert is safe here: storage keys are server-generated per
+            # answer (interviews/{user}/{interview}/{answer}/{uuid}), so a
+            # retry can only overwrite that same answer's recording.
+            file_options={"content-type": content_type, "x-upsert": "true"},
         )
     except CustomException:
         raise
     except Exception as exc:
         raise CustomException(502, f"Media storage upload failed: {type(exc).__name__}") from exc
     return storage_key
+
+
+def download_media_file(storage_key: str) -> bytes:
+    """Read back a previously uploaded recording for server-side reprocessing.
+
+    Used when a recording reached storage but transcription/evaluation did
+    not complete — the candidate can retry without re-recording. Raises 503
+    in production when Supabase is not configured, matching upload behavior.
+    """
+    settings = get_settings()
+    if not supabase_configured():
+        if settings.ENVIRONMENT.lower() == "production":
+            raise CustomException(
+                503, "Interview media storage is not configured."
+            )
+        local_path = os.path.join(MEDIA_UPLOAD_DIR, storage_key)
+        try:
+            with open(local_path, "rb") as f:
+                return f.read()
+        except OSError as exc:
+            raise CustomException(502, "Stored recording is unavailable") from exc
+    try:
+        return get_supabase_client().storage.from_(
+            settings.SUPABASE_MEDIA_BUCKET
+        ).download(storage_key)
+    except Exception as exc:
+        raise CustomException(
+            502, f"Stored recording download failed: {type(exc).__name__}"
+        ) from exc

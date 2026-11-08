@@ -10,11 +10,16 @@ from app.models.interview import InterviewMode as InterviewModeModel
 from app.models.user import User
 from app.schemas import (
     InterviewAnswer,
-    InterviewAnswerMediaResponse,
+    InterviewAnswerMediaSubmitResponse,
     InterviewCreate,
     InterviewModeUpdate,
+    InterviewReportResponse,
     InterviewResponse,
     InterviewResultResponse,
+    ProctoringEventBatchIn,
+    ProctoringEventBatchResponse,
+    ProctoringEventResponse,
+    ProctoringSummaryResponse,
     SubmitAnswerResponse,
 )
 from app.services.interview.interview_service import Interview
@@ -78,18 +83,30 @@ async def submit_answer(
 
 @router.post(
     "/{interview_id}/answers/{answer_id}/media",
-    response_model=InterviewAnswerMediaResponse,
+    response_model=InterviewAnswerMediaSubmitResponse,
 )
 async def upload_answer_media(
     interview_id: uuid.UUID,
     answer_id: uuid.UUID,
     file: UploadFile = File(...),
     duration_seconds: Optional[float] = Form(None),
+    pause_count: Optional[int] = Form(None),
+    pause_total_seconds: Optional[float] = Form(None),
+    pause_longest_seconds: Optional[float] = Form(None),
+    speech_seconds: Optional[float] = Form(None),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
     return await Interview(db).upload_answer_media(
-        current_user.id, interview_id, answer_id, file, duration_seconds
+        current_user.id,
+        interview_id,
+        answer_id,
+        file,
+        duration_seconds,
+        pause_count,
+        pause_total_seconds,
+        pause_longest_seconds,
+        speech_seconds,
     )
 
 
@@ -100,5 +117,85 @@ async def complete_interview(
     current_user: User = Depends(get_current_user),
 ):
     return await Interview(db).complete_interview(
+        current_user.id, interview_id
+    )
+
+
+@router.post(
+    "/{interview_id}/answers/{answer_id}/media/reprocess",
+    response_model=InterviewAnswerMediaSubmitResponse,
+)
+async def reprocess_answer_media(
+    interview_id: uuid.UUID,
+    answer_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).reprocess_answer_media(
+        current_user.id, interview_id, answer_id
+    )
+
+
+@router.get("/{interview_id}/report", response_model=InterviewReportResponse)
+async def get_interview_report(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).get_report(current_user.id, interview_id)
+
+
+@router.post(
+    "/{interview_id}/proctoring-consent", response_model=InterviewResponse
+)
+async def acknowledge_proctoring_consent(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).acknowledge_proctoring_consent(
+        current_user.id, interview_id
+    )
+
+
+@router.post(
+    "/{interview_id}/proctoring-events",
+    response_model=ProctoringEventBatchResponse,
+)
+async def submit_proctoring_events(
+    interview_id: uuid.UUID,
+    payload: ProctoringEventBatchIn,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).submit_proctoring_events(
+        current_user.id, interview_id, payload
+    )
+
+
+@router.get(
+    "/{interview_id}/proctoring-events",
+    response_model=List[ProctoringEventResponse],
+)
+async def list_proctoring_events(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).list_proctoring_events(
+        current_user.id, interview_id
+    )
+
+
+@router.get(
+    "/{interview_id}/proctoring-summary",
+    response_model=ProctoringSummaryResponse,
+)
+async def get_proctoring_summary(
+    interview_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return await Interview(db).proctoring_summary(
         current_user.id, interview_id
     )

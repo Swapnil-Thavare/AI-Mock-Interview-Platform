@@ -18,7 +18,8 @@ Job seekers rarely get realistic, structured interview practice tailored to thei
 - **Resume ↔ JD matching** — AI compatibility report with overall match score, matched/missing skills, strengths, gaps, and recommendations; one persisted match per user/resume/JD.
 - **Mock interviews** — configurable difficulty, question count, duration, and question types; AI-generated personalized questions; per-question timer and progress bar.
 - **Interview modes** — each interview runs as `TEXT`, `AUDIO`, or `VIDEO` (persisted per interview). AUDIO/VIDEO show a pre-interview device readiness screen that requests browser microphone/camera permission via `navigator.mediaDevices.getUserMedia`, reports per-device status, and allows retry or fallback to a simpler mode.
-- **Per-answer recording** — AUDIO/VIDEO interviews record each answer in the browser with `MediaRecorder` and upload it to a private `interview-media` Supabase Storage bucket (`POST /interviews/{id}/answers/{answer_id}/media`). Only metadata (media type, MIME type, storage key, size, duration, `PENDING`/`UPLOADED`/`FAILED` status) is persisted in PostgreSQL — never the media bytes, a filesystem path, or a public URL. Uploads are validated (MIME whitelist, mode match, `INTERVIEW_MEDIA_MAX_MB` size cap), retry-safe, and independent of answer evaluation. Media is not yet transcribed, analyzed, or auto-deleted.
+- **Per-answer recording** — AUDIO/VIDEO interviews record each answer in the browser with `MediaRecorder` and upload it to a private `interview-media` Supabase Storage bucket (`POST /interviews/{id}/answers/{answer_id}/media`). Only metadata (media type, MIME type, storage key, size, duration, `PENDING`/`UPLOADED`/`FAILED` status) is persisted in PostgreSQL — never the media bytes, a filesystem path, or a public URL. Uploads are validated (MIME whitelist, mode match, `INTERVIEW_MEDIA_MAX_MB` size cap) and retry-safe. Media is not yet analyzed or auto-deleted.
+- **Voice-first answers** — in AUDIO/VIDEO interviews the spoken answer is authoritative: the upload endpoint transcribes the recording (Gemini, inline bytes), stores the transcript on the media record and in `InterviewAnswer.answer_text`, then runs the same evaluation and adaptive follow-up pipeline as typed answers. Transcription state is tracked per recording (`NONE`/`PENDING`/`COMPLETED`/`FAILED` plus error and timestamp) and failures are recoverable by retrying the upload.
 - **Answer evaluation** — every submitted answer is evaluated by Gemini (score, per-dimension scores, strengths, weaknesses, missing points, improvement feedback, confidence, uncertainty notes).
 - **Adaptive follow-ups** — when the evaluation flags `follow_up_required`, a contextual follow-up question is generated (capped by `MAX_FOLLOW_UP_QUESTIONS`).
 - **Final report** — overall score plus technical, communication, relevance, and problem-solving scores; strengths, weaknesses, missing skills, preparation topics, and question-level feedback.
@@ -140,6 +141,8 @@ Backend (`backend/.env`, see `.env.example`):
 | `GEMINI_MODEL` | e.g. `gemini-3.6-flash` |
 | `GEMINI_TIMEOUT` | Per-request timeout in seconds (default 60) |
 | `MAX_FOLLOW_UP_QUESTIONS` | Follow-up cap per interview (default 3) |
+| `TRANSCRIPTION_PROVIDER` | Speech-to-text provider for AUDIO/VIDEO answers (default `gemini`) |
+| `TRANSCRIPTION_TIMEOUT` | Transcription request timeout in seconds (default 90) |
 
 Frontend (`frontend/.env`): `VITE_API_BASE_URL=http://localhost:8000/api/v1`
 
@@ -201,7 +204,8 @@ npm run build              # tsc + vite production build
 
 - Text-based PDFs only; scanned/image PDFs are rejected.
 - The per-question timer is client-side and not enforced by the server.
-- Interviews are still answered as text — AUDIO/VIDEO modes record per-answer clips and store them privately, but recordings are not yet transcribed, analyzed, or proctored. Media rows are kept for a future lifecycle phase; nothing is auto-deleted yet.
+- AUDIO/VIDEO answers are transcribed with Gemini and evaluated from the transcript; recordings are stored privately but not yet analyzed, proctored, or auto-deleted. Media rows are kept for a future lifecycle phase.
+- Transcriptions are sent inline to Gemini, which documents a ~20 MB total-request recommendation; very large recordings (near the 25 MB upload cap) can fail transcription — the media upload itself still succeeds and the recording can be re-transcribed.
 - When Supabase is not configured, local development stores resumes under `backend/uploads/resumes/` and recordings under `backend/uploads/interview_media/`; production (`ENVIRONMENT=production`) refuses to upload without Supabase (503).
 - No RAG / vector database and no multi-agent system — all AI calls are single-shot Gemini prompts.
 - Answer evaluation failures are tolerated (the answer is stored without an evaluation); report generation falls back to a safe degraded report.
@@ -210,7 +214,7 @@ npm run build              # tsc + vite production build
 
 ## 21. Future Enhancements
 
-- Voice/video recording, speech-to-text, and proctoring (Phase 7B+; device readiness foundation already in place)
+- Recording playback, speech/proctoring analysis, and media lifecycle cleanup (Phase 7D+; recording, upload, and transcription are already in place)
 - Coding interview rounds
 - RAG / vector search over question banks
 - Richer analytics and progress tracking

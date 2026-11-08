@@ -10,6 +10,9 @@ from app.models.base import created_at_field, updated_at_field
 
 if TYPE_CHECKING:
     from app.models.interview_answer import InterviewAnswer
+    from app.models.interview_answer_speech_analysis import (
+        InterviewAnswerSpeechAnalysis,
+    )
 
 
 class MediaKind(str, enum.Enum):
@@ -20,6 +23,13 @@ class MediaKind(str, enum.Enum):
 class MediaUploadStatus(str, enum.Enum):
     PENDING = "PENDING"
     UPLOADED = "UPLOADED"
+    FAILED = "FAILED"
+
+
+class TranscriptionStatus(str, enum.Enum):
+    NONE = "NONE"
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
 
@@ -91,7 +101,34 @@ class InterviewAnswerMedia(SQLModel, table=True):
         default=None,
         sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True),
     )
+    transcription_status: TranscriptionStatus = Field(
+        default=TranscriptionStatus.NONE,
+        sa_column=sa.Column(
+            sa.Enum(
+                TranscriptionStatus,
+                name="transcription_status",
+                create_type=False,
+            ),
+            nullable=False,
+            server_default=sa.text("'NONE'"),
+        ),
+    )
+    transcript_text: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.Text, nullable=True),
+    )
+    transcription_error: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.String(512), nullable=True),
+    )
+    transcribed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True),
+    )
     created_at: datetime | None = created_at_field()
     updated_at: datetime | None = updated_at_field()
 
     answer: "InterviewAnswer" = Relationship(back_populates="media")
+    speech_analysis: Optional["InterviewAnswerSpeechAnalysis"] = Relationship(
+        sa_relationship_kwargs={"uselist": False}
+    )

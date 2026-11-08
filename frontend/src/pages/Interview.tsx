@@ -8,19 +8,37 @@ import {
   useInterviewRecording,
   type RecordedMedia,
 } from '@/components/interview/useInterviewRecording';
+import { useProctoring } from '@/components/interview/useProctoring';
+import { ProctoringIndicator } from '@/components/interview/ProctoringIndicator';
+import { analyzeAudioPauses } from '@/components/interview/analyzeAudioPauses';
+import {
+  pickResumeTarget,
+  type ResumeAction,
+} from '@/components/interview/resumeTarget';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Textarea';
-import { interviewService } from '@/services/interviewService';
+import {
+  interviewService,
+  MAX_RECORDING_MB,
+} from '@/services/interviewService';
 import { getApiErrorMessage } from '@/services/api';
 import type {
   Interview as InterviewType,
   InterviewMode,
   Question,
   AnswerEvaluation,
+  SubmitAnswerResponse,
+  SubmitMediaResponse,
 } from '@/types';
 
 const QUESTION_TIME = 120;
+// Consent acknowledgement retried in the background — never blocks the
+// interview, and the server keeps the earliest recorded timestamp.
+const CONSENT_MAX_RETRIES = 3;
+const CONSENT_RETRY_DELAY_MS = 10_000;
+// Show an extended-processing hint after this long during media upload.
+const SLOW_PROCESSING_HINT_MS = 15_000;
 
 export const Interview: React.FC = () => {
   const navigate = useNavigate();
@@ -35,13 +53,71 @@ export const Interview: React.FC = () => {
   const [activeMode, setActiveMode] = useState<InterviewMode>('TEXT');
   const [devicesReady, setDevicesReady] = useState(false);
   const recording = useInterviewRecording(activeMode);
+  // Consent gate for proctoring event delivery — event batches queue until
+  // the acknowledgement is persisted server-side.
+  const [consentReady, setConsentReady] = useState(false);
+  const [armFailed, setArmFailed] = useState(false);
+  // Resume state for orphaned placeholders (F-003): 'record' re-offers the
+  // question for recording; 'reprocess' retries stored media server-side.
+  const [resumeAction, setResumeAction] = useState<ResumeAction>('fresh');
+  const [resumeAnswerId, setResumeAnswerId] = useState<string | null>(null);
+  const proctoring = useProctoring({
+    stream: recording.stream,
+    interviewId,
+    mode: activeMode,
+    activeQuestionId: current?.id ?? null,
+    enabled: devicesReady && activeMode !== 'TEXT',
+    consentReady,
+  });
   const [mediaUpload, setMediaUpload] = useState<
-    'idle' | 'uploading' | 'uploaded' | 'failed'
+    'idle' | 'uploading' | 'uploaded' | 'failed' | 'eval_failed'
   >('idle');
+  const [slowProcessing, setSlowProcessing] = useState(false);
   const pendingUploadRef = useRef<{
     answerId: string;
     media: RecordedMedia;
   } | null>(null);
+  const consentRetryRef = useRef<number | undefined>(undefined);
+  const consentDoneRef = useRef(false);
+
+  const acknowledgeConsent = useCallback(
+    (attemptsLeft: number) => {
+      if (!interviewId || consentDoneRef.current) return;
+      interviewService
+        .acknowledgeProctoringConsent(interviewId)
+        .then(() => {
+          consentDoneRef.current = true;
+          setConsentReady(true);
+        })
+        .catch(() => {
+          if (attemptsLeft > 0) {
+            consentRetryRef.current = window.setTimeout(
+              () => acknowledgeConsent(attemptsLeft - 1),
+              CONSENT_RETRY_DELAY_MS
+            );
+          }
+        });
+    },
+    [interviewId]
+  );
+
+  // Surface a long-processing hint while the upload pipeline works.
+  useEffect(() => {
+    if (mediaUpload !== 'uploading') {
+      setSlowProcessing(false);
+      return;
+    }
+    const t = window.setTimeout(
+      () => setSlowProcessing(true),
+      SLOW_PROCESSING_HINT_MS
+    );
+    return () => window.clearTimeout(t);
+  }, [mediaUpload]);
+
+  useEffect(
+    () => () => window.clearTimeout(consentRetryRef.current),
+    []
+  );
 
   const loadInterview = useCallback(async (id: string) => {
     try {
@@ -54,9 +130,13 @@ export const Interview: React.FC = () => {
         navigate(`/interview/result/${id}`);
         return;
       }
-      const answeredIds = new Set(data.answers.map((a) => a.questionId ?? a.question_id));
-      const next = data.questions.find((q) => !answeredIds.has(q.id)) ?? null;
-      setCurrent(next);
+      // Resume point: first unanswered question — or, in voice modes, an
+      // orphaned placeholder (record again) / unprocessed recording
+      // (retry processing, no re-record).
+      const target = pickResumeTarget(data.questions, data.answers, mode);
+      setResumeAction(target.action);
+      setResumeAnswerId(target.answerId);
+      setCurrent(target.question);
       setText('');
       setEvaluation(null);
     } catch {
@@ -88,13 +168,17 @@ export const Interview: React.FC = () => {
   // passed — browser permission is already granted by that point.
   useEffect(() => {
     if (devicesReady && activeMode !== 'TEXT') {
-      void recording.arm();
+      void recording.arm().then((ok) => setArmFailed(!ok));
     }
   }, [devicesReady, activeMode, recording.arm]);
 
   // Record one clip per question. The cleanup discards the in-progress
   // recorder whenever the question changes or the component unmounts.
-  const shouldRecord = devicesReady && activeMode !== 'TEXT' && !!current;
+  const shouldRecord =
+    devicesReady &&
+    activeMode !== 'TEXT' &&
+    !!current &&
+    resumeAction !== 'reprocess';
   useEffect(() => {
     if (!shouldRecord || !recording.armed || !recording.supported) return;
     recording.start();
@@ -113,45 +197,120 @@ export const Interview: React.FC = () => {
   const progress = total ? ((answeredCount + (submitting ? 1 : 0)) / total) * 100 : 0;
   const isLast = !current || current.id === interview?.questions[interview.questions.length - 1]?.id;
 
+  const voiceFirst = activeMode !== 'TEXT';
+
+  // Shared "move to the next question / finish" tail after a submit or a
+  // media pipeline result.
+  const advanceFromResult = useCallback(
+    async (outcome: SubmitAnswerResponse) => {
+      setEvaluation(outcome.evaluation ?? null);
+      const updated = await interviewService.getById(interviewId!);
+      setInterview(updated);
+      setResumeAction('fresh');
+      setResumeAnswerId(null);
+      if (outcome.is_complete || outcome.next_question == null) {
+        await handleEnd(updated);
+        return;
+      }
+      setCurrent(outcome.next_question);
+      setText('');
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [interviewId]
+  );
+
+  /**
+   * Stop the recorder, validate the clip, and run the media pipeline for
+   * an answer that already exists. On failure the question stays put —
+   * the recorder is restarted so the next attempt records a fresh clip,
+   * and the pending blob is kept for the Retry action.
+   */
+  const captureAndUpload = async (
+    answerId: string
+  ): Promise<SubmitMediaResponse | null> => {
+    const media = await recording.stopAndCollect();
+    const retryLater = () => {
+      // The answer placeholder exists — later submits go straight to
+      // capture+upload instead of re-submitting the answer.
+      setResumeAnswerId(answerId);
+      setResumeAction('record');
+      if (recording.armed) recording.start();
+    };
+    if (!media) {
+      setError(
+        'No recording was captured — check your device and try again.'
+      );
+      retryLater();
+      return null;
+    }
+    if (interviewService.isRecordingOversized(media.blob)) {
+      setError(
+        `Your recording is larger than ${MAX_RECORDING_MB} MB — it cannot be processed. Please keep answers shorter and try again.`
+      );
+      setMediaUpload('failed');
+      pendingUploadRef.current = null;
+      retryLater();
+      return null;
+    }
+    return uploadRecording(answerId, media);
+  };
+
   const handleSubmit = async () => {
     if (!current || !interviewId || submitting) return;
     const trimmed = text.trim();
-    if (!trimmed) {
+    // Voice-first AUDIO/VIDEO answers are spoken, not typed — the typed
+    // field is optional notes. TEXT still requires a non-empty answer.
+    if (!voiceFirst && !trimmed) {
       setError('Please type an answer before submitting.');
+      return;
+    }
+    if (voiceFirst && (recording.deadTrack || !recording.armed)) {
+      setError(
+        'Your recording device is unavailable — re-check it below before submitting.'
+      );
       return;
     }
     setSubmitting(true);
     setError('');
     setEvaluation(null);
+    setMediaUpload('idle');
 
     try {
-      const response = await interviewService.submitAnswer(interviewId, current.id, {
-        questionId: current.id,
-        text: trimmed,
-        skipped: false,
-        timeTaken: QUESTION_TIME,
-        submittedAt: new Date().toISOString(),
-      });
-
-      // The answer is already persisted; uploading its recording is a
-      // separate, best-effort step with a visible status and retry.
-      const answerId = response.answer?.id;
-      if (activeMode !== 'TEXT' && answerId) {
-        const media = await recording.stopAndCollect();
-        if (media) await uploadRecording(answerId, media);
+      let outcome: SubmitAnswerResponse;
+      if (resumeAnswerId) {
+        // Orphaned placeholder — the answer row already exists, so skip
+        // submitAnswer (it would be rejected as a duplicate) and go
+        // straight to capture + upload.
+        const processed = await captureAndUpload(resumeAnswerId);
+        if (!processed) return;
+        outcome = processed;
+      } else {
+        const response = await interviewService.submitAnswer(
+          interviewId,
+          current.id,
+          {
+            questionId: current.id,
+            // In voice modes the spoken recording is the answer — typed
+            // notes are never sent or evaluated.
+            text: voiceFirst ? '' : trimmed,
+            skipped: false,
+            timeTaken: QUESTION_TIME,
+            submittedAt: new Date().toISOString(),
+          }
+        );
+        outcome = response;
+        const answerId = response.answer?.id;
+        if (voiceFirst && answerId) {
+          // The answer placeholder exists now — any further attempt must
+          // upload against it rather than re-submitting the answer.
+          setResumeAnswerId(answerId);
+          setResumeAction('record');
+          const processed = await captureAndUpload(answerId);
+          if (!processed) return;
+          outcome = processed;
+        }
       }
-
-      setEvaluation(response.evaluation ?? null);
-      const updated = await interviewService.getById(interviewId);
-      setInterview(updated);
-
-      if (response.is_complete || response.next_question == null) {
-        await handleEnd(updated);
-        return;
-      }
-
-      setCurrent(response.next_question);
-      setText('');
+      await advanceFromResult(outcome);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Could not submit answer. Please try again.'));
     } finally {
@@ -191,27 +350,81 @@ export const Interview: React.FC = () => {
     }
   };
 
-  const uploadRecording = async (answerId: string, media: RecordedMedia) => {
-    if (!interviewId) return;
+  const uploadRecording = async (
+    answerId: string,
+    media: RecordedMedia
+  ): Promise<SubmitMediaResponse | null> => {
+    if (!interviewId) return null;
     setMediaUpload('uploading');
     try {
-      await interviewService.uploadAnswerMedia(
+      // Estimated pause stats for speech analysis — null on unsupported
+      // browsers; never blocks the upload.
+      const pauses = await analyzeAudioPauses(media.blob);
+      const result = await interviewService.uploadAnswerMedia(
         interviewId,
         answerId,
         media.blob,
-        media.durationSeconds
+        media.durationSeconds,
+        pauses ?? undefined
       );
-      setMediaUpload('uploaded');
-      pendingUploadRef.current = null;
+      if (result.media?.transcription_status === 'COMPLETED' && !result.evaluation) {
+        // Transcript saved but evaluation unavailable — the same retry
+        // re-uploads the blob; the backend skips transcription and
+        // re-runs only the evaluation.
+        setMediaUpload('eval_failed');
+        pendingUploadRef.current = { answerId, media };
+        if (recording.armed) recording.start();
+      } else {
+        setMediaUpload('uploaded');
+        pendingUploadRef.current = null;
+      }
+      return result;
     } catch {
       setMediaUpload('failed');
       pendingUploadRef.current = { answerId, media };
+      // Restart the recorder — the previous one was consumed by
+      // stopAndCollect, so the next Submit captures a fresh clip.
+      if (recording.armed) recording.start();
+      return null;
     }
   };
 
   const retryMediaUpload = async () => {
     const pending = pendingUploadRef.current;
-    if (pending) await uploadRecording(pending.answerId, pending.media);
+    if (!pending || submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await uploadRecording(pending.answerId, pending.media);
+      if (result) {
+        await advanceFromResult(result);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Retry server-side processing of a recording already in storage — the
+  // candidate does not need to re-record (F-003 reprocess resume action).
+  const handleReprocess = async () => {
+    if (!resumeAnswerId || !interviewId || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const result = await interviewService.reprocessMedia(
+        interviewId,
+        resumeAnswerId
+      );
+      await advanceFromResult(result);
+    } catch (err) {
+      setError(
+        getApiErrorMessage(
+          err,
+          'Could not process the stored recording. Please try again.'
+        )
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleModeSwitch = async (mode: InterviewMode) => {
@@ -258,7 +471,12 @@ export const Interview: React.FC = () => {
       <DashboardLayout>
         <InterviewDeviceCheck
           mode={activeMode}
-          onReady={() => setDevicesReady(true)}
+          onReady={() => {
+            // Fire-and-retry consent — a backend failure is retried in the
+            // background and never blocks or terminates the interview.
+            acknowledgeConsent(CONSENT_MAX_RETRIES);
+            setDevicesReady(true);
+          }}
           onSwitchMode={(mode) => void handleModeSwitch(mode)}
           onCancel={() => navigate('/interview/setup')}
         />
@@ -306,11 +524,52 @@ export const Interview: React.FC = () => {
           key={current.id}
           durationSeconds={QUESTION_TIME}
           onTimeUp={() => {
-            if (text.trim()) handleSubmit();
-            else handleSkip();
+            // Voice-first: time-up still submits — the recording is the answer.
+            if (resumeAction === 'reprocess') void handleReprocess();
+            else if (text.trim() || voiceFirst) void handleSubmit();
+            else void handleSkip();
           }}
         />
       </div>
+
+      {activeMode !== 'TEXT' && devicesReady && (
+        <ProctoringIndicator status={proctoring.status} />
+      )}
+
+      {/* Device recovery — a dead mic/camera never silently records. */}
+      {voiceFirst && (recording.deadTrack || armFailed) && (
+        <div
+          className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3"
+          role="alert"
+        >
+          <p className="text-sm text-amber-800">
+            {recording.deadTrack === 'video'
+              ? 'Your camera stopped working. '
+              : 'Your microphone is unavailable. '}
+            Answers cannot be recorded until the device works again.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                recording.release();
+                setArmFailed(false);
+                void recording.arm().then((ok) => setArmFailed(!ok));
+              }}
+            >
+              Re-check device
+            </Button>
+            {activeMode === 'VIDEO' && (
+              <Button
+                variant="secondary"
+                onClick={() => void handleModeSwitch('AUDIO')}
+              >
+                Switch to audio interview
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mb-6 h-2 w-full rounded-full bg-gray-200">
         <div
@@ -323,45 +582,117 @@ export const Interview: React.FC = () => {
 
       <QuestionCard question={current} index={answeredCount} total={Math.max(total, answeredCount + 1)} />
 
+      {voiceFirst && resumeAction === 'record' && resumeAnswerId && (
+        <p className="mt-3 text-sm text-amber-700">
+          Your previous recording for this question was not completed —
+          please record it again.
+        </p>
+      )}
+
       <div className="mt-6">
-        <Textarea
-          label="Your answer"
-          rows={6}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Type your response here..."
-          disabled={submitting}
-        />
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button onClick={handleSubmit} disabled={!text.trim() || submitting}>
-            {submitting ? 'Evaluating...' : isLast ? 'Finish' : 'Submit & next'}
-          </Button>
-          <Button variant="secondary" onClick={handleSkip} disabled={submitting}>
-            {isLast ? 'Skip & finish' : 'Skip'}
-          </Button>
-          <Button variant="secondary" onClick={() => handleEnd()} disabled={submitting || loading}>
-            End interview
-          </Button>
-        </div>
+        {voiceFirst && resumeAction === 'reprocess' && resumeAnswerId ? (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm text-gray-700">
+              Your recording for this question was saved but not fully
+              processed — likely due to an interruption. You can retry
+              processing it without recording again.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button onClick={handleReprocess} disabled={submitting}>
+                {submitting ? 'Processing...' : 'Retry processing'}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handleEnd()}
+                disabled={submitting || loading}
+              >
+                End interview
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {voiceFirst && (
+              <p className="mb-2 text-sm text-gray-600">
+                Speak your answer aloud — your recording is transcribed and
+                evaluated when you submit.
+              </p>
+            )}
+            <Textarea
+              label={voiceFirst ? 'Notes (optional)' : 'Your answer'}
+              rows={voiceFirst ? 3 : 6}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={
+                voiceFirst
+                  ? 'Optional notes — your spoken answer is what gets evaluated.'
+                  : 'Type your response here...'
+              }
+              disabled={submitting}
+            />
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button
+                onClick={handleSubmit}
+                disabled={(!voiceFirst && !text.trim()) || submitting}
+              >
+                {submitting
+                  ? voiceFirst
+                    ? 'Processing...'
+                    : 'Evaluating...'
+                  : isLast
+                    ? 'Finish'
+                    : 'Submit & next'}
+              </Button>
+              {!resumeAnswerId && (
+                <Button
+                  variant="secondary"
+                  onClick={handleSkip}
+                  disabled={submitting}
+                >
+                  {isLast ? 'Skip & finish' : 'Skip'}
+                </Button>
+              )}
+              <Button variant="secondary" onClick={() => handleEnd()} disabled={submitting || loading}>
+                End interview
+              </Button>
+            </div>
+          </>
+        )}
       </div>
 
-      {activeMode !== 'TEXT' && mediaUpload !== 'idle' && (
+      {voiceFirst && mediaUpload !== 'idle' && (
         <div className="mt-3 text-sm" role="status">
           {mediaUpload === 'uploading' && (
-            <span className="text-gray-600">Uploading recording...</span>
+            <span className="text-gray-600">
+              {slowProcessing
+                ? 'Still processing — long recordings can take up to a minute.'
+                : 'Uploading, transcribing and evaluating your answer...'}
+            </span>
           )}
           {mediaUpload === 'uploaded' && (
-            <span className="text-green-700">Recording saved.</span>
+            <span className="text-green-700">Answer processed.</span>
           )}
           {mediaUpload === 'failed' && (
             <span className="text-red-600">
-              Recording upload failed — your answer was saved.{' '}
+              Recording processing failed — your answer was saved.{' '}
               <button
                 type="button"
                 className="font-medium underline"
                 onClick={() => void retryMediaUpload()}
               >
-                Retry upload
+                Retry
+              </button>
+            </span>
+          )}
+          {mediaUpload === 'eval_failed' && (
+            <span className="text-red-600">
+              Transcript saved — evaluation is unavailable right now.{' '}
+              <button
+                type="button"
+                className="font-medium underline"
+                onClick={() => void retryMediaUpload()}
+              >
+                Retry evaluation
               </button>
             </span>
           )}

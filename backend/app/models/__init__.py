@@ -7,6 +7,16 @@ from .interview_answer_media import (
     InterviewAnswerMedia,
     MediaKind,
     MediaUploadStatus,
+    TranscriptionStatus,
+)
+from .interview_answer_speech_analysis import (
+    InterviewAnswerSpeechAnalysis,
+    SpeechAnalysisStatus,
+)
+from .interview_proctoring_event import (
+    InterviewProctoringEvent,
+    ProctoringEventType,
+    ProctoringSeverity,
 )
 from .interview_question import InterviewQuestion, QuestionType
 from .interview_result import InterviewResult
@@ -29,8 +39,14 @@ __all__ = [
     "InterviewQuestion",
     "QuestionType",
     "InterviewAnswer",
+    "InterviewProctoringEvent",
+    "ProctoringEventType",
+    "ProctoringSeverity",
     "InterviewAnswerMedia",
     "MediaKind",
     "MediaUploadStatus",
+    "TranscriptionStatus",
+    "InterviewAnswerSpeechAnalysis",
+    "SpeechAnalysisStatus",
     "InterviewResult",
 ]
