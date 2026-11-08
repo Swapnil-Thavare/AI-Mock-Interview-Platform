@@ -245,6 +245,19 @@ const normalizeReport = (data: Record<string, unknown>): InterviewReport => {
 const getByIdInFlight = new Map<string, Promise<Interview>>();
 const completeInFlight = new Map<string, Promise<InterviewResult>>();
 
+// Must stay aligned with backend INTERVIEW_MEDIA_MAX_MB (14 MB keeps
+// Gemini inline transcription requests under the provider's 20 MB
+// request-size ceiling once base64 overhead is applied).
+export const MAX_RECORDING_MB = 14;
+const MAX_RECORDING_BYTES = MAX_RECORDING_MB * 1024 * 1024;
+
+// The media endpoint can run upload + transcription + evaluation +
+// communication analysis sequentially — bound it generously above the
+// backend TRANSCRIPTION_TIMEOUT (90s) so a legitimate long answer still
+// completes. A timeout here is safe: retries are idempotent server-side.
+const MEDIA_PROCESSING_TIMEOUT_MS = 180_000;
+const STANDARD_LONG_TIMEOUT_MS = 120_000;
+
 const cacheKey = (id: string) => `${getToken()}:${id}`;
 
 export const interviewService = {
@@ -289,7 +302,8 @@ export const interviewService = {
     }
     const { data } = await api.post(
       `/interviews/${interviewId}/answers/${answerId}/media`,
-      form
+      form,
+      { timeout: MEDIA_PROCESSING_TIMEOUT_MS }
     );
     const raw = (data ?? {}) as Record<string, unknown>;
     return {
@@ -297,6 +311,24 @@ export const interviewService = {
       media: (raw.media ?? {}) as AnswerMedia,
     };
   },
+
+  reprocessMedia: async (
+    interviewId: string,
+    answerId: string
+  ): Promise<SubmitMediaResponse> => {
+    const { data } = await api.post(
+      `/interviews/${interviewId}/answers/${answerId}/media/reprocess`,
+      undefined,
+      { timeout: MEDIA_PROCESSING_TIMEOUT_MS }
+    );
+    const raw = (data ?? {}) as Record<string, unknown>;
+    return {
+      ...normalizeSubmitResponse(raw),
+      media: (raw.media ?? {}) as AnswerMedia,
+    };
+  },
+
+  isRecordingOversized: (blob: Blob): boolean => blob.size > MAX_RECORDING_BYTES,
 
   getById: async (id: string): Promise<Interview> => {
     const key = cacheKey(id);
@@ -325,11 +357,17 @@ export const interviewService = {
     _questionId: string,
     answer: Answer
   ): Promise<SubmitAnswerResponse> => {
-    const { data } = await api.post(`/interviews/${interviewId}/answers`, {
-      question_id: answer.questionId,
-      answer_text: answer.skipped ? '' : answer.text,
-      skipped: answer.skipped,
-    });
+    const { data } = await api.post(
+      `/interviews/${interviewId}/answers`,
+      {
+        question_id: answer.questionId,
+        answer_text: answer.skipped ? '' : answer.text,
+        skipped: answer.skipped,
+      },
+      // Answer evaluation is a single AI call — bound it but keep retries
+      // safe (duplicate submissions are rejected server-side).
+      { timeout: STANDARD_LONG_TIMEOUT_MS }
+    );
     return normalizeSubmitResponse((data ?? {}) as Record<string, unknown>);
   },
 
@@ -339,7 +377,9 @@ export const interviewService = {
     if (pending) return pending;
 
     const promise = api
-      .post(`/interviews/${interviewId}/complete`)
+      .post(`/interviews/${interviewId}/complete`, undefined, {
+        timeout: STANDARD_LONG_TIMEOUT_MS,
+      })
       .then(({ data }) => normalizeResult(data as Record<string, unknown>))
       .finally(() => {
         completeInFlight.delete(key);

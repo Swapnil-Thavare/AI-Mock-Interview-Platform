@@ -321,9 +321,9 @@ async def test_follow_up_generated_after_transcription(
 async def test_typed_audio_answer_also_transcribed_and_evaluated(
     db_client, auth_headers, monkeypatch
 ):
-    # A typed answer in AUDIO mode is evaluated at submit; the uploaded
-    # recording's transcript then becomes the authoritative answer text
-    # while the existing evaluation is preserved (not duplicated).
+    # Typed input in AUDIO mode is scratch notes — the submit creates a
+    # placeholder that is never evaluated. The transcript is the only text
+    # that is evaluated; the notes are never persisted or scored.
     interview = await _create_interview(
         db_client, auth_headers, monkeypatch, mode="AUDIO"
     )
@@ -331,7 +331,8 @@ async def test_typed_audio_answer_also_transcribed_and_evaluated(
         db_client, auth_headers, interview, answer_text="Typed fallback."
     )
     assert submitted.status_code == 200
-    assert submitted.json()["evaluation"]["score"] == 75
+    assert submitted.json()["evaluation"] is None
+    assert submitted.json()["answer"]["answer_text"] == ""
     answer_id = submitted.json()["answer"]["id"]
 
     url, files = _media_upload(answer_id, interview["id"])

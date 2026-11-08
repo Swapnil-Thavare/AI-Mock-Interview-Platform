@@ -73,7 +73,10 @@ from app.services.interview.speech_analysis import (
 from app.services.job.job_query import JobDescriptionQuery
 from app.services.match.match_query import MatchQuery
 from app.services.resume.resume_query import ResumeQuery
-from app.services.storage.storage_service import upload_media_file
+from app.services.storage.storage_service import (
+    download_media_file,
+    upload_media_file,
+)
 
 
 _MAX_ANSWER_LENGTH = 20000
@@ -311,12 +314,15 @@ class Interview:
         interview: InterviewModel,
         question: InterviewQuestion,
         answer: InterviewAnswer,
-    ) -> tuple[Optional[InterviewAnswerEvaluation], bool]:
+    ) -> tuple[Optional[InterviewAnswerEvaluation], Optional[InterviewQuestion]]:
         """Evaluate answer.answer_text, persist the result, and maybe
         generate an adaptive follow-up question.
 
         Shared by the text submission path and the voice-first media path.
-        Evaluation failures leave the answer intact and return (None, False).
+        Evaluation failures leave the answer intact and return (None, None).
+        Returns the generated follow-up question (if any) so callers can
+        deliver it as the immediate next question — follow-ups keep
+        order = max + 1 for persistence, but are asked right away.
         """
         evaluation_schema: Optional[InterviewAnswerEvaluation] = None
         try:
@@ -333,17 +339,15 @@ class Interview:
         except CustomException:
             pass
 
-        follow_up_generated = False
+        follow_up_question: Optional[InterviewQuestion] = None
         if evaluation_schema and evaluation_schema.follow_up_required:
             follow_up_count = await self._count_follow_ups(interview)
             max_follow_ups = max(0, get_settings().MAX_FOLLOW_UP_QUESTIONS)
             if follow_up_count < max_follow_ups:
-                follow_up = await self._generate_follow_up(
+                follow_up_question = await self._generate_follow_up(
                     interview, question, answer, evaluation_schema
                 )
-                if follow_up:
-                    follow_up_generated = True
-        return evaluation_schema, follow_up_generated
+        return evaluation_schema, follow_up_question
 
     async def _transcribe_media(
         self,
@@ -591,13 +595,16 @@ class Interview:
             raise CustomException(400, "Answer already submitted for this question")
 
         answer_text = answer.answer_text.strip()
-        # AUDIO/VIDEO answers may arrive as an empty placeholder — the spoken
-        # answer is transcribed later via the media upload endpoint.
+        # AUDIO/VIDEO answers are spoken — typed input is optional scratch
+        # notes, never the evaluated answer. Every non-skipped voice submit
+        # is a placeholder awaiting its recording; the transcript is the
+        # only text evaluated or persisted as the answer.
         voice_placeholder = (
-            not answer_text
-            and not answer.skipped
+            not answer.skipped
             and interview.interview_mode != InterviewModeModel.TEXT
         )
+        if voice_placeholder:
+            answer_text = ""
         if not answer_text and not answer.skipped and not voice_placeholder:
             raise CustomException(400, "Answer cannot be empty")
         if len(answer.answer_text) > _MAX_ANSWER_LENGTH:
@@ -623,18 +630,24 @@ class Interview:
         # Empty voice placeholders are evaluated after transcription in
         # upload_answer_media — never evaluate a placeholder.
         evaluation_schema: Optional[InterviewAnswerEvaluation] = None
-        follow_up_generated = False
+        follow_up_question: Optional[InterviewQuestion] = None
         if not voice_placeholder:
             (
                 evaluation_schema,
-                follow_up_generated,
+                follow_up_question,
             ) = await self._evaluate_and_follow_up(
                 interview, question, db_answer
             )
 
         await self._db.refresh(interview)
-        next_q = await self._get_next_question(interview)
-        is_complete = next_q is None and not follow_up_generated
+        # A generated follow-up is delivered as the immediate next question
+        # (persisted order stays unchanged at the end of the list).
+        next_q = (
+            follow_up_question
+            if follow_up_question is not None
+            else await self._get_next_question(interview)
+        )
+        is_complete = next_q is None
 
         return SubmitAnswerResponse(
             answer=InterviewAnswerResponse.model_validate(db_answer),
@@ -642,7 +655,7 @@ class Interview:
             next_question=InterviewQuestionResponse.model_validate(next_q)
             if next_q
             else None,
-            follow_up_generated=follow_up_generated,
+            follow_up_generated=follow_up_question is not None,
             is_complete=is_complete,
             message="Answer submitted",
         )
@@ -738,13 +751,41 @@ class Interview:
             )
         except Exception:
             media.status = MediaUploadStatus.FAILED
-            await self._query.save_media(media)
+            try:
+                await self._query.save_media(media)
+            except IntegrityError:
+                # A concurrent upload created the media row first — the
+                # persisted FAILED state wins over this in-memory insert.
+                await self._db.rollback()
             self._db.expire(answer, ["media"])
             raise
 
         media.status = MediaUploadStatus.UPLOADED
         media.uploaded_at = datetime.now(timezone.utc)
-        media = await self._query.save_media(media)
+        try:
+            media = await self._query.save_media(media)
+        except IntegrityError:
+            # A concurrent upload created the media row first — adopt it and
+            # re-upload to its server-generated key (upsert makes the
+            # overwrite safe and scoped to this answer only). rollback()
+            # expires every loaded object, so refetch answer and interview
+            # instead of reusing the expired instances.
+            await self._db.rollback()
+            interview = await self._query.get_by_id(interview_id)
+            answer = await self._query.get_answer_by_id(answer_id)
+            media = await self._query.get_media_for_answer(answer_id)
+            if media is None:
+                raise
+            media.media_type = media_kind
+            media.mime_type = raw_mime
+            media.file_size = len(content)
+            media.duration_seconds = duration_seconds
+            await anyio.to_thread.run_sync(
+                upload_media_file, media.storage_key, content, raw_mime
+            )
+            media.status = MediaUploadStatus.UPLOADED
+            media.uploaded_at = datetime.now(timezone.utc)
+            media = await self._query.save_media(media)
 
         # Voice-first pipeline: transcribe the just-uploaded bytes (no
         # storage round-trip), then evaluate the transcript exactly like a
@@ -761,6 +802,71 @@ class Interview:
                 self._db.expire(answer, ["media"])
                 raise
 
+        return await self._finalize_media_answer(
+            interview,
+            answer,
+            media,
+            sanitize_pause_stats(
+                media.duration_seconds,
+                pause_count,
+                pause_total_seconds,
+                pause_longest_seconds,
+                speech_seconds,
+            ),
+        )
+
+    async def reprocess_answer_media(
+        self,
+        user_id: uuid.UUID,
+        interview_id: uuid.UUID,
+        answer_id: uuid.UUID,
+    ) -> InterviewAnswerMediaSubmitResponse:
+        """Re-run transcription/evaluation for a recording already in
+        storage — lets a candidate recover from an interrupted upload
+        without re-recording."""
+        interview = await self._get_owned_interview(user_id, interview_id)
+        if interview.status == InterviewStatus.COMPLETED:
+            raise CustomException(
+                400, "Cannot process media for a completed interview"
+            )
+        if interview.interview_mode == InterviewModeModel.TEXT:
+            raise CustomException(
+                400, "This interview does not accept recordings"
+            )
+        answer = await self._query.get_answer_by_id(answer_id)
+        if not answer or answer.interview_id != interview.id:
+            raise CustomException(404, "Answer not found")
+        media = await self._query.get_media_for_answer(answer.id)
+        if media is None or media.status != MediaUploadStatus.UPLOADED:
+            raise CustomException(404, "No stored recording to process")
+
+        content = await anyio.to_thread.run_sync(
+            download_media_file, media.storage_key
+        )
+        if media.transcription_status != TranscriptionStatus.COMPLETED:
+            media = await self._transcribe_media(
+                media, content, media.mime_type
+            )
+
+        return await self._finalize_media_answer(
+            interview,
+            answer,
+            media,
+            sanitize_pause_stats(
+                media.duration_seconds, None, None, None, None
+            ),
+        )
+
+    async def _finalize_media_answer(
+        self,
+        interview: InterviewModel,
+        answer: InterviewAnswer,
+        media: InterviewAnswerMediaModel,
+        pause_stats: Dict[str, Optional[float]],
+    ) -> InterviewAnswerMediaSubmitResponse:
+        """Shared tail of the media pipeline: adopt the transcript as the
+        answer text, run speech analysis, evaluate if needed, and resolve
+        the next question — a generated follow-up is delivered immediately."""
         if (
             media.transcription_status == TranscriptionStatus.COMPLETED
             and media.transcript_text
@@ -782,21 +888,11 @@ class Interview:
         analysis_row: Optional[InterviewAnswerSpeechAnalysisModel] = None
         if media.transcript_text:
             analysis_row = await self._analyze_speech(
-                interview,
-                question,
-                answer,
-                media,
-                sanitize_pause_stats(
-                    media.duration_seconds,
-                    pause_count,
-                    pause_total_seconds,
-                    pause_longest_seconds,
-                    speech_seconds,
-                ),
+                interview, question, answer, media, pause_stats
             )
 
         evaluation_schema: Optional[InterviewAnswerEvaluation] = None
-        follow_up_generated = False
+        follow_up_question: Optional[InterviewQuestion] = None
         if answer.evaluation:
             evaluation_schema = InterviewAnswerEvaluation.model_validate(
                 answer.evaluation
@@ -804,19 +900,26 @@ class Interview:
         elif answer.answer_text.strip() and question is not None:
             (
                 evaluation_schema,
-                follow_up_generated,
+                follow_up_question,
             ) = await self._evaluate_and_follow_up(
                 interview, question, answer
             )
             await self._db.refresh(interview)
 
-        next_q = await self._get_next_question(interview)
-        is_complete = next_q is None and not follow_up_generated
+        next_q = (
+            follow_up_question
+            if follow_up_question is not None
+            else await self._get_next_question(interview)
+        )
+        is_complete = next_q is None
 
         # Attach the just-saved media and its analysis in memory — the
         # intervening refresh() calls expire relationship attributes, so
         # both must be attached after them to serialize without a lazy load
-        # in the async session.
+        # in the async session. refresh(interview) can also cascade-expire
+        # media through the eager-loaded answers collection, so reload
+        # media's columns before model_validate reads them in sync code.
+        await self._db.refresh(media)
         answer.media = media
         media.speech_analysis = analysis_row
         return InterviewAnswerMediaSubmitResponse(
@@ -826,7 +929,7 @@ class Interview:
             next_question=InterviewQuestionResponse.model_validate(next_q)
             if next_q
             else None,
-            follow_up_generated=follow_up_generated,
+            follow_up_generated=follow_up_question is not None,
             is_complete=is_complete,
             message="Recording processed",
         )

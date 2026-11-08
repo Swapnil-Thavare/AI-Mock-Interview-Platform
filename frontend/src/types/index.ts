@@ -187,7 +187,6 @@ export interface AnswerMedia {
   answer_id: string;
   media_type: 'AUDIO' | 'VIDEO';
   mime_type: string;
-  storage_key: string;
   file_size: number;
   duration_seconds?: number | null;
   status: 'PENDING' | 'UPLOADED' | 'FAILED';

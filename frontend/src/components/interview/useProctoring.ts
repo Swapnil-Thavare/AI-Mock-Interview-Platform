@@ -59,6 +59,13 @@ export interface UseProctoringArgs {
   mode: InterviewMode;
   activeQuestionId?: string | null;
   enabled: boolean;
+  /**
+   * Whether the consent acknowledgement was persisted server-side. Event
+   * batches queue until this is true so stored observations never precede
+   * recorded consent; if the backend stays unavailable the queue simply
+   * fills (bounded) instead of blocking the interview.
+   */
+  consentReady?: boolean;
 }
 
 export interface Proctoring {
@@ -106,18 +113,23 @@ export function useProctoring({
   mode,
   activeQuestionId,
   enabled,
+  consentReady = false,
 }: UseProctoringArgs): Proctoring {
   const [status, setStatus] = useState<ProctoringStatus>(IDLE_STATUS);
 
   // Props mirrored into refs so effect-local handlers never go stale.
   const interviewIdRef = useRef<string | null>(interviewId);
   const questionIdRef = useRef<string | null>(activeQuestionId ?? null);
+  const consentReadyRef = useRef(consentReady);
   useEffect(() => {
     interviewIdRef.current = interviewId;
   }, [interviewId]);
   useEffect(() => {
     questionIdRef.current = activeQuestionId ?? null;
   }, [activeQuestionId]);
+  useEffect(() => {
+    consentReadyRef.current = consentReady;
+  }, [consentReady]);
 
   // Shared session state — outlives either effect's re-initialization.
   const openPeriodsRef = useRef(new Map<ProctoringEventType, OpenPeriod>());
@@ -145,6 +157,9 @@ export function useProctoring({
   const flush = async (): Promise<void> => {
     const id = interviewIdRef.current;
     const queue = queueRef.current;
+    // Hold event delivery until consent is recorded — observations should
+    // never land on the server before the acknowledgement exists.
+    if (!consentReadyRef.current) return;
     if (!id || flushingRef.current || queue.length === 0) return;
     flushingRef.current = true;
     const batch = queue.splice(0, Math.min(queue.length, 100));
@@ -469,6 +484,15 @@ export function useProctoring({
       }));
     };
   }, [enabled, interviewId, mode, stream]);
+
+  // ---- Consent gate: drain the queue once the acknowledgement lands.
+  // Queued/persisted events stay queued while consentReady is false. ----
+  useEffect(() => {
+    if (consentReady && enabled && interviewId && mode !== 'TEXT') {
+      void flush();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consentReady, enabled, interviewId, mode]);
 
   // ---- Session effect: browser monitoring + upload queue (AUDIO + VIDEO).
   // Deliberately excludes `stream` — browser periods must not split when the

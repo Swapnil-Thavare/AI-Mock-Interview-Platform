@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import List
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,15 +28,32 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_STORAGE_BUCKET: str = "resumes"
 
-    # Interview media (separate private bucket, per-answer recordings)
+    # Interview media (separate private bucket, per-answer recordings).
+    # Capped at 14 MB: Gemini inline transcription payloads are base64
+    # encoded (~33% overhead), so 14 MB of media ≈ an 18.7 MB request —
+    # safely under the provider's 20 MB inline request ceiling.
     SUPABASE_MEDIA_BUCKET: str = "interview-media"
-    INTERVIEW_MEDIA_MAX_MB: int = 25
+    INTERVIEW_MEDIA_MAX_MB: int = 14
 
     # Transcription provider (voice-first AUDIO/VIDEO answers)
     TRANSCRIPTION_PROVIDER: str = "gemini"
     TRANSCRIPTION_TIMEOUT: int = 90
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @model_validator(mode="after")
+    def _require_strong_jwt_secret_in_production(self):
+        """Fail closed in production: an empty or default JWT secret makes
+        every issued token forgeable. Development keeps the convenience
+        default so local setup keeps working."""
+        if self.ENVIRONMENT.lower() == "production" and (
+            not self.JWT_SECRET_KEY or self.JWT_SECRET_KEY == "change-me"
+        ):
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong secret when "
+                "ENVIRONMENT=production"
+            )
+        return self
 
     @property
     def cors_origins_list(self) -> List[str]:

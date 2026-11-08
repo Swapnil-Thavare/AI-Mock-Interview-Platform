@@ -107,8 +107,8 @@ async def test_audio_media_upload_success(db_client, auth_headers, monkeypatch):
     assert data["status"] == "UPLOADED"
     assert data["uploaded_at"]
     assert data["duration_seconds"] == 12.5
-    assert data["storage_key"].startswith("interviews/")
-    assert "recording" not in data["storage_key"]
+    # Internal storage layout is never exposed to the client.
+    assert "storage_key" not in data
 
     # Metadata is attached to the answer on subsequent fetches.
     fetched = await db_client.get(
@@ -341,9 +341,7 @@ async def test_media_upload_retry_reuses_record(
     second = await db_client.post(url, files=files, headers=auth_headers)
     assert second.status_code == 200
     assert second.json()["media"]["id"] == first.json()["media"]["id"]
-    assert (
-        second.json()["media"]["storage_key"]
-        == first.json()["media"]["storage_key"]
-    )
-    # Same storage object overwritten — one upload call per attempt.
+    # Retry reuses the same server-generated storage key — the storage
+    # fake saw one call per attempt against the identical key.
     assert len(mock_media_storage) == 2
+    assert mock_media_storage[0][0] == mock_media_storage[1][0]

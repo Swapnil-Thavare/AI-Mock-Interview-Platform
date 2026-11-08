@@ -191,7 +191,6 @@ class InterviewAnswerMediaResponse(BaseModel):
     answer_id: UUID
     media_type: MediaKind
     mime_type: str
-    storage_key: str
     file_size: int
     duration_seconds: Optional[float] = None
     status: MediaUploadStatus
