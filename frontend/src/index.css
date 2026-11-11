@@ -22,6 +22,34 @@
 }
 
 @layer utilities {
+  /* Landing page motion — all animations are gated behind
+     prefers-reduced-motion so they collapse to instant states. */
+  @media (prefers-reduced-motion: no-preference) {
+    .animate-fade-up {
+      animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    .animate-float {
+      animation: float 7s ease-in-out infinite;
+    }
+    .animate-float-slow {
+      animation: float 11s ease-in-out infinite;
+    }
+    .animate-pulse-soft {
+      animation: pulse-soft 3s ease-in-out infinite;
+    }
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition:
+        opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .reveal.reveal-visible {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
   .btn {
     @apply inline-flex items-center justify-center rounded-lg px-4 py-2 font-medium transition focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1;
   }
@@ -36,5 +64,36 @@
   }
   .input {
     @apply w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
   }
 }
