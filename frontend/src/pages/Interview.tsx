@@ -499,8 +499,8 @@ export const Interview: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-xl font-bold text-gray-900">Mock interview</h2>
           {interview?.interview_mode && interview.interview_mode !== 'TEXT' && (
             <Badge color="primary">

@@ -5,15 +5,21 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   options: { value: string; label: string }[];
 }
 
-export const Select: React.FC<SelectProps> = ({ label, options, className = '', ...props }) => {
+export const Select: React.FC<SelectProps> = ({ label, options, className = '', id, ...props }) => {
+  const generatedId = React.useId();
+  const selectId = id ?? generatedId;
   return (
     <div className="w-full">
       {label && (
-        <label className="mb-1 block text-sm font-medium text-gray-700">
+        <label
+          htmlFor={selectId}
+          className="mb-1 block text-sm font-medium text-gray-700"
+        >
           {label}
         </label>
       )}
       <select
+        id={selectId}
         className={`w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none ${className}`}
         {...props}
       >
