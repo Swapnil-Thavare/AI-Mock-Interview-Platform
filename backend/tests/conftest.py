@@ -259,6 +259,25 @@ def mock_transcription(monkeypatch):
 def mock_resume_storage(monkeypatch):
     """Resume PDFs must never hit real Supabase Storage in tests."""
     monkeypatch.setattr(
-        "app.services.resume.resume_service._upload_resume_file",
-        lambda storage_path, content: None,
+        "app.services.resume.resume_service.upload_resume_file",
+        lambda storage_key, content: storage_key,
+    )
+
+
+@pytest.fixture(autouse=True)
+def mock_media_storage(monkeypatch):
+    """Interview recordings must never hit real Supabase Storage in tests.
+
+    Storage calls inside interview_service are replaced so no test depends
+    on Supabase credentials or on-disk fallbacks. Test modules that assert
+    on upload calls define their own mock_media_storage fixture, which
+    shadows this one.
+    """
+    monkeypatch.setattr(
+        "app.services.interview.interview_service.upload_media_file",
+        lambda storage_key, content, content_type: storage_key,
+    )
+    monkeypatch.setattr(
+        "app.services.interview.interview_service.download_media_file",
+        lambda storage_key: b"fake-media",
     )

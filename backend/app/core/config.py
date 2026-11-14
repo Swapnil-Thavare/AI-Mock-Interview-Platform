@@ -10,18 +10,18 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     PROJECT_NAME: str = "IntelliInterview API"
-    CORS_ORIGINS: str = "http://localhost:8080"
+    CORS_ORIGINS: str = ""
     DATABASE_URL: str = ""
-    JWT_SECRET_KEY: str = "change-me"
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # AI Provider
-    AI_PROVIDER: str = "gemini"
+    AI_PROVIDER: str = ""
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.6-flash"
+    GEMINI_MODEL: str = ""
     GEMINI_TIMEOUT: int = 60
-    MAX_FOLLOW_UP_QUESTIONS: int = 3
+    MAX_FOLLOW_UP_QUESTIONS: int = "5"
 
     # Supabase Storage (resume files)
     SUPABASE_URL: str = ""
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     INTERVIEW_MEDIA_MAX_MB: int = 14
 
     # Transcription provider (voice-first AUDIO/VIDEO answers)
-    TRANSCRIPTION_PROVIDER: str = "gemini"
+    TRANSCRIPTION_PROVIDER: str = ""
     TRANSCRIPTION_TIMEOUT: int = 90
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
