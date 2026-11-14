@@ -10,9 +10,9 @@ interface QuestionCardProps {
 
 export const QuestionCard: React.FC<QuestionCardProps> = ({ question, index, total }) => {
   return (
-    <div className="card">
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-sm text-gray-500">
+    <div className="rounded-xl border border-gray-200 border-l-4 border-l-primary-500 bg-white p-6 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
           Question {index + 1} of {total}
         </span>
         <div className="flex gap-2">
@@ -22,10 +22,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question, index, tot
           <Badge color="gray">{question.difficulty}</Badge>
         </div>
       </div>
-      <h3 className="mb-2 text-lg font-semibold text-gray-900">{question.text}</h3>
+      <h3 className="text-xl font-semibold leading-relaxed text-gray-900">
+        {question.text}
+      </h3>
       {question.expectedAnswer && (
-        <p className="text-sm text-gray-600">
-          <strong>Hint:</strong> {question.expectedAnswer}
+        <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-800 ring-1 ring-amber-100">
+          <strong className="font-semibold">Hint:</strong> {question.expectedAnswer}
         </p>
       )}
     </div>

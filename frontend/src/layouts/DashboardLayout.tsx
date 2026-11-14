@@ -103,7 +103,11 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
           </nav>
         </aside>
 
-        <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 md:pl-64 print:p-0 md:print:pl-6">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 md:pl-64 print:p-0 md:print:pl-6"
+        >
           <div className="mx-auto max-w-5xl">{children}</div>
         </main>
       </div>

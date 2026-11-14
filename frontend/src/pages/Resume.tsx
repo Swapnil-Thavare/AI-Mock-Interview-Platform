@@ -213,7 +213,7 @@ export const Resume: React.FC = () => {
               />
             </label>
             {error && (
-              <p role="alert" className="text-sm text-red-600">
+              <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
                 {error}
               </p>
             )}

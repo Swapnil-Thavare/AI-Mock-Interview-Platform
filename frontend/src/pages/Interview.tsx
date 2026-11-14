@@ -32,6 +32,36 @@ import type {
   SubmitMediaResponse,
 } from '@/types';
 
+const CameraPreview: React.FC<{ stream: MediaStream }> = ({ stream }) => {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (ref.current && ref.current.srcObject !== stream) {
+      ref.current.srcObject = stream;
+    }
+  }, [stream]);
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-900 shadow-sm">
+      <video
+        ref={ref}
+        autoPlay
+        muted
+        playsInline
+        aria-label="Camera preview"
+        className="h-44 w-full -scale-x-100 object-cover sm:h-52"
+      />
+      <div className="flex items-center gap-2 bg-gray-900 px-3 py-1.5">
+        <span
+          className="h-1.5 w-1.5 rounded-full bg-red-500 motion-safe:animate-pulse"
+          aria-hidden="true"
+        />
+        <span className="text-[11px] font-medium text-gray-300">
+          Your live camera preview
+        </span>
+      </div>
+    </div>
+  );
+};
+
 const QUESTION_TIME = 120;
 // Consent acknowledgement retried in the background — never blocks the
 // interview, and the server keeps the earliest recorded timestamp.
@@ -57,6 +87,7 @@ export const Interview: React.FC = () => {
   // the acknowledgement is persisted server-side.
   const [consentReady, setConsentReady] = useState(false);
   const [armFailed, setArmFailed] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
   // Resume state for orphaned placeholders (F-003): 'record' re-offers the
   // question for recording; 'reprocess' retries stored media server-side.
   const [resumeAction, setResumeAction] = useState<ResumeAction>('fresh');
@@ -461,7 +492,18 @@ export const Interview: React.FC = () => {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="py-20 text-center text-gray-600">Loading interview...</div>
+        <div className="mx-auto max-w-2xl space-y-4 py-10">
+          <div className="h-6 w-48 rounded bg-gray-200 motion-safe:animate-pulse" />
+          <div className="h-2 w-full rounded-full bg-gray-200 motion-safe:animate-pulse" />
+          <div className="rounded-xl border border-gray-200 bg-white p-6">
+            <div className="space-y-3">
+              <div className="h-4 w-24 rounded bg-gray-200 motion-safe:animate-pulse" />
+              <div className="h-5 w-4/5 rounded bg-gray-100 motion-safe:animate-pulse" />
+              <div className="h-5 w-3/5 rounded bg-gray-100 motion-safe:animate-pulse" />
+            </div>
+          </div>
+          <p className="text-center text-sm text-gray-500">Preparing your interview...</p>
+        </div>
       </DashboardLayout>
     );
   }
@@ -487,9 +529,33 @@ export const Interview: React.FC = () => {
   if (!current) {
     return (
       <DashboardLayout>
-        <div className="py-20 text-center text-gray-600">
-          <p className="mb-4">No more questions. You can finish the interview.</p>
-          <Button onClick={() => handleEnd()} disabled={submitting || loading}>
+        <div className="mx-auto max-w-md py-16 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-green-600 ring-1 ring-green-100">
+            <svg
+              className="h-7 w-7"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m5 13 4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className="mt-4 text-xl font-bold tracking-tight text-gray-900">
+            All questions answered
+          </h2>
+          <p className="mt-2 text-sm text-gray-600">
+            You have reached the end of the interview. Finish to generate your
+            assessment report.
+          </p>
+          <Button
+            className="mt-6 shadow-sm shadow-primary-600/20"
+            onClick={() => handleEnd()}
+            disabled={submitting || loading}
+          >
             Finish interview
           </Button>
         </div>
@@ -499,26 +565,33 @@ export const Interview: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-xl font-bold text-gray-900">Mock interview</h2>
-          {interview?.interview_mode && interview.interview_mode !== 'TEXT' && (
-            <Badge color="primary">
-              {interview.interview_mode === 'VIDEO' ? 'Video' : 'Audio'}
-            </Badge>
-          )}
-          {recording.state === 'recording' && (
-            <Badge color="red">
-              <span
-                className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600"
-                aria-hidden="true"
-              />
-              Recording
-            </Badge>
-          )}
-          {recording.state === 'error' && (
-            <Badge color="red">Recording stopped</Badge>
-          )}
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-bold tracking-tight text-gray-900">
+              {interview?.title || 'Mock interview'}
+            </h2>
+            {interview?.interview_mode && interview.interview_mode !== 'TEXT' && (
+              <Badge color="primary">
+                {interview.interview_mode === 'VIDEO' ? 'Video' : 'Audio'}
+              </Badge>
+            )}
+            {recording.state === 'recording' && (
+              <Badge color="red">
+                <span
+                  className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600 motion-safe:animate-pulse"
+                  aria-hidden="true"
+                />
+                Recording
+              </Badge>
+            )}
+            {recording.state === 'error' && (
+              <Badge color="red">Recording stopped</Badge>
+            )}
+          </div>
+          <p className="mt-0.5 text-sm text-gray-500">
+            Answer each question — your progress saves as you go.
+          </p>
         </div>
         <Timer
           key={current.id}
@@ -571,14 +644,54 @@ export const Interview: React.FC = () => {
         </div>
       )}
 
-      <div className="mb-6 h-2 w-full rounded-full bg-gray-200">
-        <div
-          className="h-2 rounded-full bg-primary-600 transition-all"
-          style={{ width: `${Math.min(progress, 100)}%` }}
-        />
+      <div className="mb-6">
+        <div className="mb-1.5 flex items-center justify-between text-xs text-gray-500">
+          <span>
+            {answeredCount} of {total} answered
+          </span>
+          <span>{Math.round(Math.min(progress, 100))}%</span>
+        </div>
+        <div className="h-2 w-full rounded-full bg-gray-200">
+          <div
+            className="h-2 rounded-full bg-primary-600 transition-all"
+            style={{ width: `${Math.min(progress, 100)}%` }}
+          />
+        </div>
+        {interview && interview.questions.length > 1 && (
+          <div className="mt-2 flex gap-1.5" aria-hidden="true">
+            {interview.questions.map((q) => {
+              const answered = interview.answers.some(
+                (a) => (a.questionId ?? a.question_id) === q.id
+              );
+              const isCurrent = current?.id === q.id;
+              return (
+                <span
+                  key={q.id}
+                  className={`h-1.5 flex-1 rounded-full transition-colors ${
+                    answered
+                      ? 'bg-primary-600'
+                      : isCurrent
+                      ? 'bg-primary-300'
+                      : 'bg-gray-200'
+                  }`}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
+          {error}
+        </p>
+      )}
+
+      {activeMode === 'VIDEO' && recording.stream && (
+        <div className="mb-4">
+          <CameraPreview stream={recording.stream} />
+        </div>
+      )}
 
       <QuestionCard question={current} index={answeredCount} total={Math.max(total, answeredCount + 1)} />
 
@@ -591,7 +704,7 @@ export const Interview: React.FC = () => {
 
       <div className="mt-6">
         {voiceFirst && resumeAction === 'reprocess' && resumeAnswerId ? (
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <p className="text-sm text-gray-700">
               Your recording for this question was saved but not fully
               processed — likely due to an interruption. You can retry
@@ -652,7 +765,12 @@ export const Interview: React.FC = () => {
                   {isLast ? 'Skip & finish' : 'Skip'}
                 </Button>
               )}
-              <Button variant="secondary" onClick={() => handleEnd()} disabled={submitting || loading}>
+              <Button
+                variant="secondary"
+                className="border-red-200 text-red-700 hover:bg-red-50 hover:border-red-300"
+                onClick={() => setConfirmEnd(true)}
+                disabled={submitting || loading}
+              >
                 End interview
               </Button>
             </div>
@@ -661,7 +779,10 @@ export const Interview: React.FC = () => {
       </div>
 
       {voiceFirst && mediaUpload !== 'idle' && (
-        <div className="mt-3 text-sm" role="status">
+        <div
+          className="mt-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm"
+          role="status"
+        >
           {mediaUpload === 'uploading' && (
             <span className="text-gray-600">
               {slowProcessing
@@ -700,12 +821,15 @@ export const Interview: React.FC = () => {
       )}
 
       {submitting && (
-        <div className="mt-4 text-sm text-gray-600">AI is evaluating your answer...</div>
+        <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
+          <span className="h-3 w-3 rounded-full border-2 border-primary-200 border-t-primary-600 motion-safe:animate-spin" />
+          AI is evaluating your answer...
+        </div>
       )}
 
       {evaluation && !submitting && (
-        <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <h4 className="mb-2 font-semibold text-gray-900">Feedback</h4>
+        <div className="mt-6 rounded-xl border border-gray-200 border-l-4 border-l-primary-500 bg-white p-5 shadow-sm">
+          <h4 className="mb-2 font-semibold text-gray-900">AI feedback</h4>
           <p className="mb-2 text-sm text-gray-700">
             <span className="font-medium">Score:</span> {evaluation.score}%
           </p>
@@ -722,6 +846,51 @@ export const Interview: React.FC = () => {
               </ul>
             </div>
           )}
+        </div>
+      )}
+
+      {confirmEnd && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="end-interview-title"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setConfirmEnd(false);
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmEnd(false);
+          }}
+        >
+          <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
+            <h3 id="end-interview-title" className="text-lg font-semibold text-gray-900">
+              End this interview?
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">
+              The interview will be completed and you'll be taken to your
+              assessment report. Your answered questions are saved.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                autoFocus
+                onClick={() => setConfirmEnd(false)}
+              >
+                Keep going
+              </Button>
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700 focus:ring-red-500"
+                disabled={submitting || loading}
+                onClick={() => {
+                  setConfirmEnd(false);
+                  void handleEnd();
+                }}
+              >
+                End interview
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </DashboardLayout>

@@ -308,14 +308,14 @@ const QuestionReportCard: React.FC<{
           <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
             Question {index + 1}
           </div>
-          <h4 className="mt-0.5 font-medium text-gray-900">
+          <h4 className="mt-0.5 font-medium break-words text-gray-900">
             {block.question_text}
           </h4>
           <div className="mt-1 flex flex-wrap gap-1 print:hidden">
             <Badge color="gray">{block.question_type}</Badge>
             <Badge color="gray">{block.difficulty}</Badge>
             {block.answer_status !== 'answered' && (
-              <Badge color="yellow">{block.answer_status}</Badge>
+              <Badge color="yellow">{block.answer_status.replace(/_/g, ' ')}</Badge>
             )}
           </div>
         </div>
@@ -635,8 +635,27 @@ export const InterviewResult: React.FC = () => {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="py-20 text-center text-gray-600">
-          Preparing your interview report...
+        <div className="mx-auto max-w-3xl space-y-6 py-6">
+          <div className="rounded-xl border border-gray-200 border-t-4 border-t-primary-200 bg-white p-6">
+            <div className="space-y-3">
+              <div className="h-3 w-32 rounded bg-gray-200 motion-safe:animate-pulse" />
+              <div className="h-6 w-64 rounded bg-gray-200 motion-safe:animate-pulse" />
+              <div className="h-4 w-48 rounded bg-gray-100 motion-safe:animate-pulse" />
+            </div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-6">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="h-24 rounded-lg bg-gray-100 motion-safe:animate-pulse" />
+              <div className="space-y-2 sm:col-span-2">
+                <div className="h-4 w-full rounded bg-gray-100 motion-safe:animate-pulse" />
+                <div className="h-4 w-2/3 rounded bg-gray-100 motion-safe:animate-pulse" />
+                <div className="h-4 w-1/2 rounded bg-gray-100 motion-safe:animate-pulse" />
+              </div>
+            </div>
+          </div>
+          <p className="text-center text-sm text-gray-500">
+            Preparing your interview report...
+          </p>
         </div>
       </DashboardLayout>
     );
@@ -645,10 +664,33 @@ export const InterviewResult: React.FC = () => {
   if (error) {
     return (
       <DashboardLayout>
-        <div className="py-20 text-center">
-          <p className="mb-4 text-red-600">{error}</p>
-          <Button onClick={() => void load()} disabled={loading}>
-            {loading ? 'Retrying...' : 'Retry'}
+        <div className="mx-auto max-w-md py-16 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600 ring-1 ring-red-100">
+            <svg
+              className="h-7 w-7"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 8v4" />
+              <path d="M12 16h.01" />
+            </svg>
+          </div>
+          <h2 className="mt-4 text-xl font-bold text-gray-900">
+            Report unavailable
+          </h2>
+          <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>
+          <Button
+            className="mt-6"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            {loading ? 'Retrying...' : 'Try again'}
           </Button>
         </div>
       </DashboardLayout>
@@ -658,8 +700,28 @@ export const InterviewResult: React.FC = () => {
   if (!report) {
     return (
       <DashboardLayout>
-        <div className="py-20 text-center text-gray-600">
-          No report is available for this interview.
+        <div className="mx-auto max-w-md py-16 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-500 ring-1 ring-gray-200">
+            <svg
+              className="h-7 w-7"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+              <path d="M14 2v6h6" />
+              <path d="M9 15h6" />
+              <path d="M9 11h6" />
+            </svg>
+          </div>
+          <h2 className="mt-4 text-xl font-bold text-gray-900">No report yet</h2>
+          <p className="mt-2 text-sm text-gray-600">
+            No report is available for this interview.
+          </p>
         </div>
       </DashboardLayout>
     );
@@ -717,10 +779,31 @@ export const InterviewResult: React.FC = () => {
   return (
     <DashboardLayout>
       {/* Screen controls — never printed. */}
-      <div className="mb-6 flex items-center justify-between print:hidden">
-        <h2 className="text-2xl font-bold text-gray-900">Interview report</h2>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-gray-900">Interview report</h2>
+          <p className="mt-0.5 text-sm text-gray-600">
+            Your full assessment — print or save it as a PDF.
+          </p>
+        </div>
         <div className="flex gap-2">
-          <Button onClick={() => window.print()}>Download report</Button>
+          <Button onClick={() => window.print()} className="shadow-sm shadow-primary-600/20">
+            <svg
+              className="-ml-0.5 mr-1.5 h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6 9V2h12v7" />
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+              <rect x="6" y="14" width="12" height="8" />
+            </svg>
+            Download report
+          </Button>
           <Link to="/interviews">
             <Button variant="secondary">View history</Button>
           </Link>
@@ -735,7 +818,7 @@ export const InterviewResult: React.FC = () => {
               <p className="text-xs font-bold uppercase tracking-widest text-primary-700">
                 IntelliInterview
               </p>
-              <h1 className="mt-1 text-2xl font-bold text-gray-900">
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-900">
                 Interview Assessment Report
               </h1>
               <p className="mt-1 text-gray-600">
@@ -1096,7 +1179,7 @@ export const InterviewResult: React.FC = () => {
               — AI-powered mock interview assessment. Scores reflect the
               evaluations recorded at interview completion.
             </span>
-            <span className="font-mono">Report ID: {report.report_id}</span>
+            <span className="font-mono break-all">Report ID: {report.report_id}</span>
           </div>
           <p className="mt-1">
             Generated {formatDateTime(report.generated_at)} ·{' '}

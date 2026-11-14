@@ -38,11 +38,27 @@ export const Timer: React.FC<TimerProps> = ({ durationSeconds, onTimeUp }) => {
 
   return (
     <div
-      className={`inline-block rounded-lg px-3 py-1 text-sm font-medium ${
-        remaining < 10 ? 'bg-red-100 text-red-800' : 'bg-primary-100 text-primary-800'
+      className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold ring-1 ${
+        remaining < 10
+          ? 'bg-red-100 text-red-800 ring-red-200'
+          : 'bg-white text-gray-800 ring-gray-200 shadow-sm'
       }`}
+      aria-live="off"
     >
-      Time: {format(remaining)}
+      <svg
+        className={`h-4 w-4 ${remaining < 10 ? 'text-red-600' : 'text-primary-600'}`}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 6v6l4 2" />
+      </svg>
+      <span className="tabular-nums">{format(remaining)}</span>
     </div>
   );
 };

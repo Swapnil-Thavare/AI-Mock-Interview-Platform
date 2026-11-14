@@ -39,7 +39,7 @@ const INTERVIEW_MODES: {
     description: 'Speak your answers. A microphone is required.',
     icon: (
       <>
-        <path d="M12 2a4 4 0 0 1 4 4v5a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4Z" />
+        <path d="M12 2a4 4 0 0 1 4 4v5a4 4 0 0 1-8 0V6a4 4 0 0 1-8 0Z" />
         <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
         <path d="M12 18v4" />
       </>
@@ -84,6 +84,31 @@ const SectionHeading: React.FC<{ icon: React.ReactNode; title: string; subtitle?
     </div>
   </div>
 );
+
+const CheckDot: React.FC<{ show: boolean }> = ({ show }) =>
+  show ? (
+    <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white">
+      <svg
+        className="h-3 w-3"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="m5 13 4 4L19 7" />
+      </svg>
+    </span>
+  ) : null;
+
+const cardCls = (selected: boolean) =>
+  `relative rounded-xl border p-4 text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+    selected
+      ? 'border-primary-600 bg-primary-50/60 shadow-sm ring-1 ring-primary-600/30'
+      : 'border-gray-300 bg-white hover:border-primary-200 hover:bg-primary-50/30'
+  }`;
 
 export const InterviewSetup: React.FC = () => {
   const navigate = useNavigate();
@@ -137,6 +162,26 @@ export const InterviewSetup: React.FC = () => {
     setSetup((prev) => ({ ...prev, [key]: value }));
   };
 
+  const handleRadioKey = (e: React.KeyboardEvent<HTMLElement>) => {
+    const nav = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'];
+    if (!nav.includes(e.key)) return;
+    e.preventDefault();
+    const group = (e.target as HTMLElement).closest('[role="radiogroup"]');
+    if (!group) return;
+    const items = Array.from(
+      group.querySelectorAll<HTMLElement>('[role="radio"]')
+    );
+    const idx = items.indexOf(e.target as HTMLElement);
+    if (idx < 0) return;
+    let next = idx;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (idx + 1) % items.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (idx - 1 + items.length) % items.length;
+    else if (e.key === 'Home') next = 0;
+    else next = items.length - 1;
+    items[next].focus();
+    items[next].click();
+  };
+
   if (loadingData) {
     return (
       <DashboardLayout>
@@ -145,28 +190,30 @@ export const InterviewSetup: React.FC = () => {
             <div className="h-7 w-56 rounded bg-gray-200 motion-safe:animate-pulse" />
             <div className="h-4 w-72 rounded bg-gray-100 motion-safe:animate-pulse" />
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
-            <div className="space-y-4">
-              <div className="h-4 w-28 rounded bg-gray-200 motion-safe:animate-pulse" />
-              <div className="h-10 rounded-lg bg-gray-100 motion-safe:animate-pulse" />
-              <div className="h-10 rounded-lg bg-gray-100 motion-safe:animate-pulse" />
-            </div>
-          </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
-            <div className="space-y-4">
-              <div className="h-4 w-28 rounded bg-gray-200 motion-safe:animate-pulse" />
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="h-24 rounded-lg bg-gray-100 motion-safe:animate-pulse" />
-                <div className="h-24 rounded-lg bg-gray-100 motion-safe:animate-pulse" />
-                <div className="h-24 rounded-lg bg-gray-100 motion-safe:animate-pulse" />
+          {[0, 1].map((i) => (
+            <div key={i} className="rounded-xl border border-gray-200 bg-white p-6">
+              <div className="space-y-4">
+                <div className="h-4 w-28 rounded bg-gray-200 motion-safe:animate-pulse" />
+                <div className="h-14 rounded-lg bg-gray-100 motion-safe:animate-pulse" />
+                <div className="h-14 rounded-lg bg-gray-100 motion-safe:animate-pulse" />
               </div>
-              <div className="h-10 rounded-lg bg-gray-100 motion-safe:animate-pulse" />
             </div>
-          </div>
+          ))}
         </div>
       </DashboardLayout>
     );
   }
+
+  const typeOptions: { value: InterviewSetupType['type']; label: string }[] = [
+    { value: 'technical', label: 'Technical' },
+    { value: 'behavioral', label: 'Behavioral' },
+    { value: 'mixed', label: 'Mixed' },
+  ];
+  const difficultyOptions: { value: InterviewSetupType['difficulty']; label: string }[] = [
+    { value: 'easy', label: 'Easy' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'hard', label: 'Hard' },
+  ];
 
   return (
     <DashboardLayout>
@@ -197,34 +244,103 @@ export const InterviewSetup: React.FC = () => {
                 </>
               }
             />
-            <div className="space-y-4">
-              <Select
-                label="Resume"
-                value={setup.resumeId}
-                onChange={(e) => update('resumeId', e.target.value)}
-                options={[
-                  { value: '', label: 'Choose a resume' },
-                  ...resumes.map((r) => ({ value: r.id, label: r.fileName })),
-                ]}
-              />
-              <Select
-                label="Job description"
-                value={setup.jobDescriptionId}
-                onChange={(e) => update('jobDescriptionId', e.target.value)}
-                options={[
-                  { value: '', label: 'Choose a job description' },
-                  ...jobs.map((j) => ({ value: j.id, label: `${j.title} ${j.company ? `— ${j.company}` : ''}` })),
-                ]}
-              />
-              {resumes.length === 0 || jobs.length === 0 ? (
-                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
-                  {resumes.length === 0 && jobs.length === 0
-                    ? 'You need a resume and a job description first — upload them from the sidebar.'
-                    : resumes.length === 0
-                    ? 'You need to upload a resume first — add one from the Resume page.'
-                    : 'You need a job description first — add one from the Job Description page.'}
-                </p>
-              ) : null}
+            <div className="space-y-5">
+              <div>
+                <span className="mb-2 block text-sm font-medium text-gray-700">
+                  Resume
+                </span>
+                {resumes.length === 0 ? (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-800 ring-1 ring-amber-200">
+                    No resumes yet — upload one from the Resume page first.
+                  </p>
+                ) : (
+                  <div
+                    role="radiogroup"
+                    aria-label="Resume"
+                    className="grid max-h-56 gap-2 overflow-y-auto sm:grid-cols-2"
+                  >
+                    {resumes.map((r, i) => {
+                      const selected = setup.resumeId === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          tabIndex={selected || (!setup.resumeId && i === 0) ? 0 : -1}
+                          onKeyDown={handleRadioKey}
+                          onClick={() => update('resumeId', r.id)}
+                          className={cardCls(selected)}
+                        >
+                          <span className="flex items-center gap-2.5 pr-6">
+                            <span
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[10px] font-bold ring-1 ${
+                                selected
+                                  ? 'bg-red-50 text-red-600 ring-red-100'
+                                  : 'bg-gray-50 text-gray-500 ring-gray-200'
+                              }`}
+                            >
+                              PDF
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium text-gray-900">
+                                {r.fileName}
+                              </span>
+                              <span className="mt-0.5 block text-xs text-gray-500">
+                                {new Date(r.uploadedAt).toLocaleDateString()}
+                              </span>
+                            </span>
+                          </span>
+                          <CheckDot show={selected} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <span className="mb-2 block text-sm font-medium text-gray-700">
+                  Job description
+                </span>
+                {jobs.length === 0 ? (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-800 ring-1 ring-amber-200">
+                    No job descriptions yet — add one from the Job Description page first.
+                  </p>
+                ) : (
+                  <div
+                    role="radiogroup"
+                    aria-label="Job description"
+                    className="grid max-h-56 gap-2 overflow-y-auto sm:grid-cols-2"
+                  >
+                    {jobs.map((j, i) => {
+                      const selected = setup.jobDescriptionId === j.id;
+                      return (
+                        <button
+                          key={j.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          tabIndex={selected || (!setup.jobDescriptionId && i === 0) ? 0 : -1}
+                          onKeyDown={handleRadioKey}
+                          onClick={() => update('jobDescriptionId', j.id)}
+                          className={cardCls(selected)}
+                        >
+                          <span className="block min-w-0 pr-6">
+                            <span className="block truncate text-sm font-medium text-gray-900">
+                              {j.title}
+                            </span>
+                            <span className="mt-0.5 block truncate text-xs text-gray-500">
+                              {j.company || 'No company specified'}
+                            </span>
+                          </span>
+                          <CheckDot show={selected} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </Card>
 
@@ -258,12 +374,10 @@ export const InterviewSetup: React.FC = () => {
                         type="button"
                         role="radio"
                         aria-checked={selected}
+                        tabIndex={selected ? 0 : -1}
+                        onKeyDown={handleRadioKey}
                         onClick={() => update('interviewMode', mode.value)}
-                        className={`relative rounded-xl border p-4 text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                          selected
-                            ? 'border-primary-600 bg-primary-50/60 shadow-sm ring-1 ring-primary-600/30'
-                            : 'border-gray-300 bg-white hover:border-primary-200 hover:bg-primary-50/30'
-                        }`}
+                        className={cardCls(selected)}
                       >
                         <span
                           className={`flex h-8 w-8 items-center justify-center rounded-lg ring-1 ${
@@ -291,22 +405,7 @@ export const InterviewSetup: React.FC = () => {
                         <span className="mt-1 block text-xs leading-relaxed text-gray-600">
                           {mode.description}
                         </span>
-                        {selected && (
-                          <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white">
-                            <svg
-                              className="h-3 w-3"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="3"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              aria-hidden="true"
-                            >
-                              <path d="m5 13 4 4L19 7" />
-                            </svg>
-                          </span>
-                        )}
+                        <CheckDot show={selected} />
                       </button>
                     );
                   })}
@@ -321,26 +420,64 @@ export const InterviewSetup: React.FC = () => {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Select
-                  label="Difficulty"
-                  value={setup.difficulty}
-                  onChange={(e) => update('difficulty', e.target.value as InterviewSetupType['difficulty'])}
-                  options={[
-                    { value: 'easy', label: 'Easy' },
-                    { value: 'medium', label: 'Medium' },
-                    { value: 'hard', label: 'Hard' },
-                  ]}
-                />
-                <Select
-                  label="Question type"
-                  value={setup.type}
-                  onChange={(e) => update('type', e.target.value as InterviewSetupType['type'])}
-                  options={[
-                    { value: 'technical', label: 'Technical' },
-                    { value: 'behavioral', label: 'Behavioral' },
-                    { value: 'mixed', label: 'Mixed' },
-                  ]}
-                />
+                <div>
+                  <span className="mb-2 block text-sm font-medium text-gray-700">
+                    Difficulty
+                  </span>
+                  <div
+                    role="radiogroup"
+                    aria-label="Difficulty"
+                    className="flex rounded-lg border border-gray-300 bg-gray-50 p-1"
+                  >
+                    {difficultyOptions.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={setup.difficulty === o.value}
+                        tabIndex={setup.difficulty === o.value ? 0 : -1}
+                        onKeyDown={handleRadioKey}
+                        onClick={() => update('difficulty', o.value)}
+                        className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                          setup.difficulty === o.value
+                            ? 'bg-white text-primary-700 shadow-sm ring-1 ring-primary-200'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span className="mb-2 block text-sm font-medium text-gray-700">
+                    Question type
+                  </span>
+                  <div
+                    role="radiogroup"
+                    aria-label="Question type"
+                    className="flex rounded-lg border border-gray-300 bg-gray-50 p-1"
+                  >
+                    {typeOptions.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={setup.type === o.value}
+                        tabIndex={setup.type === o.value ? 0 : -1}
+                        onKeyDown={handleRadioKey}
+                        onClick={() => update('type', o.value)}
+                        className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                          setup.type === o.value
+                            ? 'bg-white text-primary-700 shadow-sm ring-1 ring-primary-200'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <Select
                   label="Number of questions"
                   value={String(setup.questionCount)}
@@ -366,18 +503,36 @@ export const InterviewSetup: React.FC = () => {
           </Card>
 
           {/* Submit */}
-          {error && (
-            <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
-              {error}
-            </p>
-          )}
-          <Button
-            onClick={handleStart}
-            className="w-full py-3 text-base shadow-md shadow-primary-600/20"
-            disabled={loading}
-          >
-            {loading ? 'Generating your interview...' : 'Start interview'}
-          </Button>
+          <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-white to-primary-50/40 p-5 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
+              <span className="font-medium text-gray-700">Session:</span>
+              <span>{setup.questionCount} questions</span>
+              <span className="capitalize">{setup.difficulty}</span>
+              <span className="capitalize">{setup.type}</span>
+              <span>{setup.duration} min</span>
+              <span>{setup.interviewMode === 'TEXT' ? 'Text' : setup.interviewMode === 'AUDIO' ? 'Audio' : 'Video'}</span>
+            </div>
+            {error && (
+              <p
+                role="alert"
+                className="mb-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200"
+              >
+                {error}
+              </p>
+            )}
+            <Button
+              onClick={handleStart}
+              className="w-full py-3 text-base shadow-md shadow-primary-600/20"
+              disabled={loading || !setup.resumeId || !setup.jobDescriptionId}
+            >
+              {loading ? 'Generating your interview...' : 'Start interview'}
+            </Button>
+            {(!setup.resumeId || !setup.jobDescriptionId) && !error && (
+              <p className="mt-2 text-center text-xs text-gray-500">
+                Select a resume and a job description above to continue.
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </DashboardLayout>
