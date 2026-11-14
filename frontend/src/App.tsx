@@ -1,5 +1,6 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { AuthLayout } from '@/layouts/AuthLayout';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Landing } from '@/pages/Landing';
 import { Login } from '@/pages/Login';
@@ -27,10 +28,19 @@ const protectedRoutes = [
 
 const App: React.FC = () => {
   return (
-    <Routes>
+    <>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white focus:shadow-lg"
+      >
+        Skip to content
+      </a>
+      <Routes>
       <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      <Route element={<AuthLayout />}>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+      </Route>
       {protectedRoutes.map(({ path, element }) => (
         <Route
           key={path}
@@ -39,7 +49,8 @@ const App: React.FC = () => {
         />
       ))}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 };
 

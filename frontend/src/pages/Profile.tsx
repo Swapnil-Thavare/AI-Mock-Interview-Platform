@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { authService } from '@/services/authService';
 import { interviewService } from '@/services/interviewService';
@@ -18,6 +19,29 @@ const splitStrings = (value: string): string[] =>
     .split(/[\n,]+/)
     .map((s) => s.trim())
     .filter(Boolean);
+
+const SectionHeading: React.FC<{ icon: React.ReactNode; title: string }> = ({
+  icon,
+  title,
+}) => (
+  <div className="mb-4 flex items-center gap-2.5">
+    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-50 to-primary-100/70 text-primary-600 ring-1 ring-primary-100">
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {icon}
+      </svg>
+    </span>
+    <h3 className="font-semibold text-gray-900">{title}</h3>
+  </div>
+);
 
 export const Profile: React.FC = () => {
   const { user, loading, updateUser } = useAuth();
@@ -83,17 +107,50 @@ export const Profile: React.FC = () => {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="py-20 text-center text-gray-600">Loading profile...</div>
+        <div className="mx-auto max-w-4xl space-y-6">
+          <div className="space-y-2">
+            <div className="h-7 w-40 rounded bg-gray-200 motion-safe:animate-pulse" />
+            <div className="h-4 w-64 rounded bg-gray-100 motion-safe:animate-pulse" />
+          </div>
+          <div className="grid gap-6 lg:grid-cols-5">
+            <div className="h-72 rounded-xl border border-gray-200 bg-white lg:col-span-3" />
+            <div className="h-48 rounded-xl border border-gray-200 bg-white lg:col-span-2" />
+          </div>
+        </div>
       </DashboardLayout>
     );
   }
 
+  const initial = (user?.name || user?.email || 'C').charAt(0).toUpperCase();
+  const joined = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+      })
+    : null;
+
   return (
     <DashboardLayout>
-      <h2 className="mb-6 text-2xl font-bold text-gray-900">Profile</h2>
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <h3 className="mb-4 text-lg font-semibold">Personal details</h3>
+      {/* Page header */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold tracking-tight text-gray-900">Profile</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Manage your personal details and see your interview activity.
+        </p>
+      </div>
+
+      <div className="grid items-start gap-6 lg:grid-cols-5">
+        {/* Personal details form */}
+        <Card className="lg:col-span-3">
+          <SectionHeading
+            title="Personal details"
+            icon={
+              <>
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </>
+            }
+          />
           <form onSubmit={handleSave} className="space-y-4">
             <Input label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
             <Input label="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
@@ -115,33 +172,117 @@ export const Profile: React.FC = () => {
               onChange={(e) => setExperience(e.target.value)}
             />
             {message && (
-              <p className={`text-sm ${message.includes('Could not') ? 'text-red-600' : 'text-green-600'}`}>
+              <p
+                role={message.includes('Could not') ? 'alert' : 'status'}
+                className={`rounded-lg px-4 py-3 text-sm ring-1 ${
+                  message.includes('Could not')
+                    ? 'bg-red-50 text-red-600 ring-red-200'
+                    : 'bg-green-50 text-green-700 ring-green-200'
+                }`}
+              >
                 {message}
               </p>
             )}
-            <Button type="submit" className="w-full" disabled={saving}>
+            <Button type="submit" className="w-full shadow-sm shadow-primary-600/20" disabled={saving}>
               {saving ? 'Saving...' : 'Save changes'}
             </Button>
           </form>
         </Card>
 
-        <Card>
-          <h3 className="mb-4 text-lg font-semibold">Your stats</h3>
-          <dl className="space-y-3">
-            <div className="flex justify-between border-b border-gray-100 py-2">
-              <dt className="text-sm text-gray-600">Interviews</dt>
-              <dd className="font-medium">{stats.total}</dd>
+        {/* Identity + activity */}
+        <div className="space-y-6 lg:col-span-2">
+          <Card>
+            <div className="flex items-center gap-4">
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-xl font-bold text-white shadow-sm">
+                {initial}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-gray-900">
+                  {user?.name || 'Candidate'}
+                </p>
+                <p className="truncate text-sm text-gray-500">{user?.email}</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {user?.role && (
+                    <Badge color="primary">
+                      {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                    </Badge>
+                  )}
+                  {joined && <Badge color="gray">Joined {joined}</Badge>}
+                </div>
+              </div>
             </div>
-            <div className="flex justify-between border-b border-gray-100 py-2">
-              <dt className="text-sm text-gray-600">Completed</dt>
-              <dd className="font-medium">{stats.completed}</dd>
-            </div>
-            <div className="flex justify-between py-2">
-              <dt className="text-sm text-gray-600">Average score</dt>
-              <dd className="font-medium">{stats.average}%</dd>
-            </div>
-          </dl>
-        </Card>
+          </Card>
+
+          <Card>
+            <SectionHeading
+              title="Interview activity"
+              icon={
+                <>
+                  <path d="M3 3v18h18" />
+                  <path d="m7 15 4-5 4 3 5-7" />
+                </>
+              }
+            />
+            <dl className="space-y-1">
+              <div className="flex items-center justify-between border-b border-gray-100 py-2.5">
+                <dt className="flex items-center gap-2 text-sm text-gray-600">
+                  <svg
+                    className="h-4 w-4 text-primary-500"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+                  </svg>
+                  Interviews
+                </dt>
+                <dd className="text-sm font-semibold text-gray-900">{stats.total}</dd>
+              </div>
+              <div className="flex items-center justify-between border-b border-gray-100 py-2.5">
+                <dt className="flex items-center gap-2 text-sm text-gray-600">
+                  <svg
+                    className="h-4 w-4 text-green-600"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="m8 12 3 3 5-6" />
+                  </svg>
+                  Completed
+                </dt>
+                <dd className="text-sm font-semibold text-gray-900">{stats.completed}</dd>
+              </div>
+              <div className="flex items-center justify-between py-2.5">
+                <dt className="flex items-center gap-2 text-sm text-gray-600">
+                  <svg
+                    className="h-4 w-4 text-primary-500"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m22 7-8.5 8.5-5-5L2 17" />
+                    <path d="M16 7h6v6" />
+                  </svg>
+                  Average score
+                </dt>
+                <dd className="text-sm font-semibold text-gray-900">{stats.average}%</dd>
+              </div>
+            </dl>
+          </Card>
+        </div>
       </div>
     </DashboardLayout>
   );

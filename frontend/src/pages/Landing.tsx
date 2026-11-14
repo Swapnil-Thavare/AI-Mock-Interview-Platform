@@ -457,7 +457,7 @@ export const Landing: React.FC = () => {
       </header>
 
       {/* ── Hero ───────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden">
+      <section id="main-content" className="relative overflow-hidden">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 bg-gradient-to-b from-primary-50 via-white to-white"

@@ -292,7 +292,7 @@ export const Dashboard: React.FC = () => {
         </div>
       ) : error ? (
         <div className="rounded-xl border border-dashed border-red-200 bg-red-50/50 p-6 text-center">
-          <p className="text-sm text-red-600">{error}</p>
+          <p role="alert" className="text-sm font-medium text-red-600">{error}</p>
           <Button
             variant="secondary"
             className="mt-3"

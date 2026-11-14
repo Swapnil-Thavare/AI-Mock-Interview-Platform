@@ -99,15 +99,19 @@ export const JobDescription: React.FC = () => {
       });
       setActive(data);
       setJds((prev) => [data, ...prev]);
-      setTitle('');
-      setCompany('');
-      setDescription('');
-      setRequiredSkills('');
+      resetForm();
     } catch (err) {
       setError(getApiErrorMessage(err, 'Could not save job description. Please try again.'));
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setCompany('');
+    setDescription('');
+    setRequiredSkills('');
   };
 
   const handleDelete = async (id: string) => {
@@ -213,13 +217,24 @@ export const JobDescription: React.FC = () => {
               placeholder="React, TypeScript, CSS"
             />
             {error && (
-              <p role="alert" className="text-sm text-red-600">
+              <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
                 {error}
               </p>
             )}
-            <Button type="submit" className="w-full shadow-sm shadow-primary-600/20" disabled={loading}>
-              {loading ? 'Analyzing...' : 'Analyze job description'}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1"
+                onClick={resetForm}
+                disabled={loading}
+              >
+                Reset
+              </Button>
+              <Button type="submit" className="flex-1 shadow-sm shadow-primary-600/20" disabled={loading}>
+                {loading ? 'Analyzing...' : 'Analyze job description'}
+              </Button>
+            </div>
           </form>
         </Card>
 
@@ -428,7 +443,7 @@ export const JobDescription: React.FC = () => {
         </div>
       ) : listError ? (
         <div className="mt-10 rounded-xl border border-dashed border-red-200 bg-red-50/50 p-6 text-center">
-          <p className="text-sm text-red-600">{listError}</p>
+          <p role="alert" className="text-sm font-medium text-red-600">{listError}</p>
           <Button
             variant="secondary"
             className="mt-3"

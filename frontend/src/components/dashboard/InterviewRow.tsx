@@ -37,8 +37,20 @@ const scoreClass = (score: number): string =>
     ? 'bg-yellow-100 text-yellow-800'
     : 'bg-red-100 text-red-800';
 
+const STATUS_LABELS: Record<string, string> = {
+  completed: 'Completed',
+  'in-progress': 'In Progress',
+  in_progress: 'In Progress',
+  pending: 'Pending',
+  cancelled: 'Cancelled',
+};
+
+const statusLabel = (status: string): string =>
+  STATUS_LABELS[status] ??
+  status.replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 const statusColor = (status: string): 'green' | 'yellow' | 'gray' =>
-  status === 'completed' ? 'green' : status === 'in-progress' ? 'yellow' : 'gray';
+  status === 'completed' ? 'green' : status === 'in-progress' || status === 'in_progress' ? 'yellow' : 'gray';
 
 export const InterviewRow: React.FC<InterviewRowProps> = ({ interview }) => {
   const navigate = useNavigate();
@@ -81,7 +93,7 @@ export const InterviewRow: React.FC<InterviewRowProps> = ({ interview }) => {
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-3 pl-[52px] sm:pl-0">
-        <Badge color={statusColor(interview.status)}>{interview.status}</Badge>
+        <Badge color={statusColor(interview.status)}>{statusLabel(interview.status)}</Badge>
         {interview.result && (
           <span
             className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${scoreClass(

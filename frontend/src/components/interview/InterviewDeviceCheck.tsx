@@ -67,7 +67,7 @@ export const InterviewDeviceCheck: React.FC<InterviewDeviceCheckProps> = ({
 
   return (
     <div className="mx-auto max-w-xl">
-      <h2 className="mb-2 text-2xl font-bold text-gray-900">Check your devices</h2>
+      <h2 className="mb-2 text-2xl font-bold tracking-tight text-gray-900">Check your devices</h2>
       <p className="mb-6 text-sm text-gray-600">
         This interview uses your {deviceName}. We will check that{' '}
         {isVideo ? 'they work' : 'it works'} before you begin. Nothing is recorded
@@ -80,12 +80,15 @@ export const InterviewDeviceCheck: React.FC<InterviewDeviceCheckProps> = ({
         </div>
 
         {media.message && (
-          <p role="alert" className="mt-4 text-sm text-red-600">
+          <p
+            role="alert"
+            className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200"
+          >
             {media.message}
           </p>
         )}
         {status === 'ready' && (
-          <p className="mt-4 text-sm text-green-700">
+          <p className="mt-4 rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-700 ring-1 ring-green-200">
             Your devices are ready. You can start the interview.
           </p>
         )}
@@ -117,7 +120,7 @@ export const InterviewDeviceCheck: React.FC<InterviewDeviceCheckProps> = ({
             <label className="mt-3 flex items-start gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
-                className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 checked={consented}
                 onChange={(e) => setConsented(e.target.checked)}
               />
