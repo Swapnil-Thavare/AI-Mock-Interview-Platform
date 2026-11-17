@@ -49,3 +49,13 @@ async def get_resume(
     current_user: User = Depends(get_current_user),
 ):
     return await Resume(db).get_by_id(current_user.id, resume_id)
+
+
+@router.delete("/{resume_id}")
+async def delete_resume(
+    resume_id: uuid.UUID,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    await Resume(db).delete(current_user.id, resume_id)
+    return {"message": "Resume deleted"}

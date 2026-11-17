@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -12,7 +13,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.config import settings
 from app.db.db import get_session
 from app.models.user import User
-from app.services.auth.auth_query import UserQuery
+from app.services.auth.auth_query import RevokedTokenQuery, UserQuery
 
 hasher = PasswordHash((BcryptHasher(),))
 
@@ -39,7 +40,7 @@ def create_access_token(
         expire = datetime.now(timezone.utc) + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "jti": uuid.uuid4().hex})
     return jwt.encode(
         to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
     )
@@ -73,6 +74,13 @@ async def get_current_user(
     payload = decode_access_token(token)
     user_id = payload.get("sub")
     if user_id is None:
+        raise credentials_exception
+
+    # Tokens revoked via logout are denylisted by their jti claim. Tokens
+    # minted before revocation existed carry no jti and remain valid until
+    # they expire naturally.
+    jti = payload.get("jti")
+    if jti is not None and await RevokedTokenQuery(db).is_revoked(jti):
         raise credentials_exception
 
     user = await UserQuery(db).get_by_id(user_id)

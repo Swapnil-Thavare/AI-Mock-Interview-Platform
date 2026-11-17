@@ -11,7 +11,10 @@ from app.schemas.resume import ResumeCreate, ResumeResponse
 from app.services.ai.ai_service import AIService
 from app.services.resume.pdf_extractor import extract_text_from_pdf
 from app.services.resume.resume_query import ResumeQuery
-from app.services.storage.storage_service import upload_resume_file
+from app.services.storage.storage_service import (
+    delete_resume_file,
+    upload_resume_file,
+)
 
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
@@ -57,7 +60,7 @@ class Resume:
         self, user_id: uuid.UUID, resume_id: uuid.UUID
     ) -> ResumeResponse:
         resume = await self._query.get_by_id(resume_id)
-        if not resume or resume.user_id != user_id:
+        if not resume or resume.user_id != user_id or resume.is_deleted:
             raise CustomException(404, "Resume not found")
         return ResumeResponse.model_validate(resume)
 
@@ -72,3 +75,13 @@ class Resume:
     async def get_all(self, user_id: uuid.UUID) -> List[ResumeResponse]:
         resumes = await self._query.get_all(user_id)
         return [ResumeResponse.model_validate(r) for r in resumes]
+
+    async def delete(self, user_id: uuid.UUID, resume_id: uuid.UUID) -> None:
+        resume = await self._query.get_by_id(resume_id)
+        if not resume or resume.user_id != user_id:
+            raise CustomException(404, "Resume not found")
+        # Remove the stored PDF first so a storage failure keeps the row —
+        # the object is only gone once this returns successfully.
+        if resume.file_path:
+            await anyio.to_thread.run_sync(delete_resume_file, resume.file_path)
+        await self._query.delete(resume)

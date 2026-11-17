@@ -294,3 +294,184 @@ async def test_resume_response_exposes_no_storage_key(
     body = response.json()
     assert "file_path" not in body
     assert "storage_key" not in body
+
+
+async def _upload_resume(db_client, auth_headers, monkeypatch) -> str:
+    monkeypatch.setattr(
+        "app.services.resume.resume_service.extract_text_from_pdf",
+        lambda _bytes: "Sample resume text",
+    )
+    response = await db_client.post(
+        "/api/v1/resume/upload",
+        files={"file": ("resume.pdf", b"%PDF fake", "application/pdf")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    return response.json()["id"]
+
+
+async def test_resume_delete_marks_row_deleted_and_removes_storage_object(
+    db_client, auth_headers, monkeypatch
+):
+    """Deleting a resume removes the stored PDF and soft-deletes the row:
+    it is excluded from lists and direct fetches, but kept for FK links."""
+    deleted_paths = []
+    monkeypatch.setattr(
+        "app.services.resume.resume_service.delete_resume_file",
+        lambda path: deleted_paths.append(path),
+    )
+    resume_id = await _upload_resume(db_client, auth_headers, monkeypatch)
+
+    delete = await db_client.delete(
+        f"/api/v1/resume/{resume_id}", headers=auth_headers
+    )
+    assert delete.status_code == 200
+    assert deleted_paths, "stored file must be deleted with the row"
+
+    listing = await db_client.get("/api/v1/resume", headers=auth_headers)
+    assert all(r["id"] != resume_id for r in listing.json())
+
+    gone = await db_client.get(
+        f"/api/v1/resume/{resume_id}", headers=auth_headers
+    )
+    assert gone.status_code == 404
+
+
+async def test_resume_delete_rejects_other_users_resume(
+    db_client, auth_headers, test_user, monkeypatch
+):
+    """A resume can only be deleted by its owner."""
+    resume_id = await _upload_resume(db_client, auth_headers, monkeypatch)
+
+    # auth_headers belongs to test_user; register a second user so their
+    # token is genuinely different.
+    register = await db_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "someone-else@example.com",
+            "full_name": "Someone Else",
+            "password": "password",
+        },
+    )
+    assert register.status_code == 200
+    login = await db_client.post(
+        "/api/v1/auth/login",
+        json={"email": "someone-else@example.com", "password": "password"},
+    )
+    other_headers = {
+        "Authorization": f"Bearer {login.json()['access_token']}"
+    }
+
+    delete = await db_client.delete(
+        f"/api/v1/resume/{resume_id}", headers=other_headers
+    )
+    assert delete.status_code == 404
+
+
+async def test_interview_and_report_survive_resume_and_jd_deletion(
+    db_client, auth_headers, monkeypatch
+):
+    """Interviews outlive their source rows: ON DELETE SET NULL clears the
+    FKs, the completed interview and its report stay fetchable, and the
+    deleted resume/JD no longer appear in setup lists."""
+    monkeypatch.setattr(
+        "app.services.resume.resume_service.delete_resume_file",
+        lambda path: None,
+    )
+    monkeypatch.setattr(
+        "app.services.resume.resume_service.extract_text_from_pdf",
+        lambda _bytes: "Sample resume text",
+    )
+
+    resume = await db_client.post(
+        "/api/v1/resume/upload",
+        files={"file": ("resume.pdf", b"%PDF fake", "application/pdf")},
+        headers=auth_headers,
+    )
+    job = await db_client.post(
+        "/api/v1/job-descriptions",
+        json={"title": "Backend Engineer", "description": "Python role"},
+        headers=auth_headers,
+    )
+    resume_id = resume.json()["id"]
+    job_id = job.json()["id"]
+
+    interview = await db_client.post(
+        "/api/v1/interviews",
+        json={
+            "title": "Mock Interview",
+            "resume_id": resume_id,
+            "job_description_id": job_id,
+            "difficulty": "medium",
+            "question_count": 1,
+            "duration": 30,
+            "question_types": ["technical"],
+            "interview_mode": "TEXT",
+        },
+        headers=auth_headers,
+    )
+    assert interview.status_code == 200
+    interview_id = interview.json()["id"]
+    question_id = interview.json()["questions"][0]["id"]
+
+    answer = await db_client.post(
+        f"/api/v1/interviews/{interview_id}/answers",
+        json={"question_id": question_id, "answer_text": "An answer."},
+        headers=auth_headers,
+    )
+    assert answer.status_code == 200
+    complete = await db_client.post(
+        f"/api/v1/interviews/{interview_id}/complete", headers=auth_headers
+    )
+    assert complete.status_code == 200
+
+    # Delete both source rows after the interview completed.
+    assert (
+        await db_client.delete(
+            f"/api/v1/resume/{resume_id}", headers=auth_headers
+        )
+    ).status_code == 200
+    assert (
+        await db_client.delete(
+            f"/api/v1/job-descriptions/{job_id}", headers=auth_headers
+        )
+    ).status_code == 200
+
+    # Deleted items can no longer be picked in interview setup.
+    resumes = await db_client.get("/api/v1/resume", headers=auth_headers)
+    assert all(r["id"] != resume_id for r in resumes.json())
+    jobs = await db_client.get("/api/v1/job-descriptions", headers=auth_headers)
+    assert all(j["id"] != job_id for j in jobs.json())
+
+    # Even a stale client cannot start an interview from a deleted row.
+    reused = await db_client.post(
+        "/api/v1/interviews",
+        json={
+            "title": "Stale Interview",
+            "resume_id": resume_id,
+            "job_description_id": job_id,
+            "difficulty": "medium",
+            "question_count": 1,
+            "duration": 30,
+            "question_types": ["technical"],
+            "interview_mode": "TEXT",
+        },
+        headers=auth_headers,
+    )
+    assert reused.status_code == 404
+
+    # The interview itself is unaffected; the soft-deleted rows keep their
+    # FK references so reports retain full context.
+    fetched = await db_client.get(
+        f"/api/v1/interviews/{interview_id}", headers=auth_headers
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["resume_id"] == resume_id
+    assert fetched.json()["job_description_id"] == job_id
+    assert fetched.json()["status"] == "completed"
+
+    # The completed report remains available.
+    report = await db_client.get(
+        f"/api/v1/interviews/{interview_id}/report", headers=auth_headers
+    )
+    assert report.status_code == 200

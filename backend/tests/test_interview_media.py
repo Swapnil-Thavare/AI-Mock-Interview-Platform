@@ -282,6 +282,9 @@ async def test_media_upload_storage_unavailable(
     from app.services.storage import storage_service
 
     monkeypatch.setattr(get_settings(), "ENVIRONMENT", "production")
+    # Simulate an environment without Supabase credentials regardless of
+    # whatever the developer's .env happens to contain.
+    monkeypatch.setattr(storage_service, "supabase_configured", lambda: False)
     monkeypatch.setattr(
         "app.services.interview.interview_service.upload_media_file",
         storage_service.upload_media_file,

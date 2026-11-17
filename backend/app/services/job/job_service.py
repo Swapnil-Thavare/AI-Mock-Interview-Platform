@@ -41,7 +41,7 @@ class JobDescription:
         self, user_id: uuid.UUID, job_id: uuid.UUID
     ) -> JobDescriptionResponse:
         job = await self._query.get_by_id(job_id)
-        if not job or job.user_id != user_id:
+        if not job or job.user_id != user_id or job.is_deleted:
             raise CustomException(404, "Job description not found")
         return JobDescriptionResponse.model_validate(job)
 
