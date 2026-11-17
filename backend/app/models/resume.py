@@ -47,6 +47,12 @@ class Resume(SQLModel, table=True):
         default_factory=dict,
         sa_column=sa.Column(sa.JSON, nullable=False),
     )
+    is_deleted: bool = Field(
+        default=False,
+        sa_column=sa.Column(
+            sa.Boolean, nullable=False, server_default=sa.text("false")
+        ),
+    )
     created_at: datetime | None = created_at_field()
     updated_at: datetime | None = updated_at_field()
 

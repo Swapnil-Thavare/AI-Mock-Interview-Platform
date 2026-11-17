@@ -131,7 +131,7 @@ Backend (`backend/.env`, see `.env.example`):
 | `JWT_ALGORITHM` | `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Token lifetime |
 | `CORS_ORIGINS` | Comma-separated allowed origins |
-| `SUPABASE_URL` | Supabase project URL (storage backend for resumes + interview media) |
+| `SUPABASE_URL` | Supabase project URL (storage backend for resumes + interview media). Each environment uses its own Supabase project — local `.env` points at the development project |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service-role key — backend only, never exposed to the client |
 | `SUPABASE_STORAGE_BUCKET` | Private bucket for resume PDFs (default `resumes`) |
 | `SUPABASE_MEDIA_BUCKET` | Private bucket for interview recordings (default `interview-media`) |

@@ -11,6 +11,7 @@ from pydantic import ValidationError
 # asyncio_mode=auto — no module-level asyncio mark needed.
 
 from app.core.config import Settings
+from app.exception import CustomException
 from app.services.ai import schemas as ai_schemas
 from app.services.ai.ai_service import AIService
 from app.services.interview.interview_query import InterviewQuery
@@ -508,15 +509,16 @@ def test_supabase_upload_sends_upsert(monkeypatch):
     assert captured["options"]["content-type"] == "audio/webm"
 
 
-def test_local_upload_fallback_unchanged(monkeypatch, tmp_path):
+def test_unconfigured_storage_fails_in_development(monkeypatch):
+    """There is no filesystem fallback: missing Supabase config is a 503
+    in every environment, not a silent write to local disk."""
     monkeypatch.setattr(storage_service, "supabase_configured", lambda: False)
     monkeypatch.setattr(
         storage_service.get_settings(), "ENVIRONMENT", "development"
     )
-    monkeypatch.setattr(storage_service, "MEDIA_UPLOAD_DIR", str(tmp_path))
-    key = storage_service.upload_media_file("k/a.webm", b"data", "audio/webm")
-    assert key == "k/a.webm"
-    assert (tmp_path / "k" / "a.webm").read_bytes() == b"data"
+    with pytest.raises(CustomException) as exc_info:
+        storage_service.upload_media_file("k/a.webm", b"data", "audio/webm")
+    assert exc_info.value.status_code == 503
 
 
 async def test_no_storage_keys_exposed_in_interview_response(

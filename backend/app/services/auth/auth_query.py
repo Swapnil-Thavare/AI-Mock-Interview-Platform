@@ -1,9 +1,11 @@
 import uuid
+from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlmodel import select
+from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.models.revoked_token import RevokedToken
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 
@@ -51,3 +53,31 @@ class UserQuery:
         await self._db.commit()
         await self._db.refresh(user)
         return user
+
+
+class RevokedTokenQuery:
+    def __init__(self, db: AsyncSession):
+        self._db = db
+
+    async def is_revoked(self, jti: str) -> bool:
+        result = await self._db.exec(
+            select(RevokedToken.id).where(RevokedToken.jti == jti)
+        )
+        return result.first() is not None
+
+    async def revoke(
+        self, user_id: uuid.UUID, jti: str, expires_at: datetime
+    ) -> None:
+        if await self.is_revoked(jti):
+            return
+        self._db.add(
+            RevokedToken(user_id=user_id, jti=jti, expires_at=expires_at)
+        )
+        # Rows past the token's own expiry can never authenticate again —
+        # prune them so the denylist stays bounded to live tokens.
+        await self._db.exec(
+            delete(RevokedToken).where(
+                RevokedToken.expires_at < datetime.now(timezone.utc)
+            )
+        )
+        await self._db.commit()

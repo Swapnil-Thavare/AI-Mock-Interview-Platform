@@ -483,7 +483,7 @@ class Interview:
     ) -> InterviewResponse:
         if payload.resume_id:
             resume = await ResumeQuery(self._db).get_by_id(payload.resume_id)
-            if not resume or resume.user_id != user_id:
+            if not resume or resume.user_id != user_id or resume.is_deleted:
                 raise CustomException(404, "Resume not found")
             resume_analysis = await self._ensure_resume_analysis(resume)
         else:
@@ -493,7 +493,7 @@ class Interview:
             job = await JobDescriptionQuery(self._db).get_by_id(
                 payload.job_description_id
             )
-            if not job or job.user_id != user_id:
+            if not job or job.user_id != user_id or job.is_deleted:
                 raise CustomException(404, "Job description not found")
             job_analysis = await self._ensure_jd_analysis(job)
         else:

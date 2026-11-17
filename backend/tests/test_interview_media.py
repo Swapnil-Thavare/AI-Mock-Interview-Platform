@@ -277,11 +277,14 @@ async def test_media_upload_storage_unavailable(
     )
     answer_id = await _submit_first_answer(db_client, auth_headers, interview)
 
-    # Restore the real storage helper and simulate production with no
-    # Supabase configuration — it must refuse instead of degrading.
+    # Restore the real storage helper with no Supabase configuration —
+    # it must refuse instead of degrading, in every environment.
     from app.services.storage import storage_service
 
     monkeypatch.setattr(get_settings(), "ENVIRONMENT", "production")
+    # Simulate an environment without Supabase credentials regardless of
+    # whatever the developer's .env happens to contain.
+    monkeypatch.setattr(storage_service, "supabase_configured", lambda: False)
     monkeypatch.setattr(
         "app.services.interview.interview_service.upload_media_file",
         storage_service.upload_media_file,

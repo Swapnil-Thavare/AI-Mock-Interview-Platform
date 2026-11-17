@@ -53,4 +53,8 @@ export const resumeService = {
     const { data } = await api.get('/resume');
     return Array.isArray(data) ? data.map((r: Record<string, unknown>) => normalizeResume(r)) : [];
   },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/resume/${id}`);
+  },
 };
