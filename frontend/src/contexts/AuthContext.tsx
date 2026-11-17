@@ -35,7 +35,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const fromApi = await authService.getCurrentUser();
         if (!fromApi) {
           // Token is invalid or expired; clear stale local state.
-          authService.logout();
+          authService.clearSession();
           if (!ignore) {
             setUser(null);
             setLoading(false);
@@ -47,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(fromApi);
         }
       } catch {
-        authService.logout();
+        authService.clearSession();
         if (!ignore) {
           setUser(null);
           setLoading(false);
@@ -87,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    authService.logout();
+    void authService.logout();
     setUser(null);
     navigate('/login', { replace: true });
   };

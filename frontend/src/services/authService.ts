@@ -34,6 +34,13 @@ const getToken = () => localStorage.getItem('token') ?? '';
 const getInFlightKey = () => getToken();
 const getCurrentUserInFlight = new Map<string, Promise<User | null>>();
 
+const clearSession = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  localStorage.removeItem('currentInterviewId');
+  getCurrentUserInFlight.clear();
+};
+
 export const authService = {
   login: async (input: LoginInput): Promise<{ token: string; user: User }> => {
     const { data } = await api.post('/auth/login', input);
@@ -91,11 +98,18 @@ export const authService = {
     return promise;
   },
 
-  logout: (): void => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('currentInterviewId');
-    getCurrentUserInFlight.clear();
+  clearSession,
+
+  logout: async (): Promise<void> => {
+    try {
+      if (getToken()) {
+        await api.post('/auth/logout');
+      }
+    } catch {
+      // A failed revocation call must not keep the user signed in locally.
+    } finally {
+      clearSession();
+    }
   },
 
   updateMe: async (updates: Partial<User>): Promise<User> => {
