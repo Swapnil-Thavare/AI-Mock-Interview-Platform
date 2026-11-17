@@ -38,7 +38,10 @@ class ResumeQuery:
     async def get_all(self, user_id: uuid.UUID) -> List[ResumeModel]:
         result = await self._db.exec(
             select(ResumeModel)
-            .where(ResumeModel.user_id == user_id)
+            .where(
+                ResumeModel.user_id == user_id,
+                ResumeModel.is_deleted == False,  # noqa: E712
+            )
             .order_by(ResumeModel.created_at.desc())
         )
         return result.all()
@@ -46,7 +49,17 @@ class ResumeQuery:
     async def get_latest(self, user_id: uuid.UUID) -> Optional[ResumeModel]:
         result = await self._db.exec(
             select(ResumeModel)
-            .where(ResumeModel.user_id == user_id)
+            .where(
+                ResumeModel.user_id == user_id,
+                ResumeModel.is_deleted == False,  # noqa: E712
+            )
             .order_by(ResumeModel.created_at.desc())
         )
         return result.first()
+
+    async def delete(self, resume: ResumeModel) -> None:
+        """Soft delete: flag the row so it is excluded from lists while the
+        interview FK references stay valid."""
+        resume.is_deleted = True
+        self._db.add(resume)
+        await self._db.commit()

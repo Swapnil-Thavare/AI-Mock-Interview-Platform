@@ -31,7 +31,10 @@ class JobDescriptionQuery:
     async def get_all(self, user_id: uuid.UUID) -> List[JobDescription]:
         result = await self._db.exec(
             select(JobDescription)
-            .where(JobDescription.user_id == user_id)
+            .where(
+                JobDescription.user_id == user_id,
+                JobDescription.is_deleted == False,  # noqa: E712
+            )
             .order_by(JobDescription.created_at.desc())
         )
         return result.all()
@@ -42,5 +45,8 @@ class JobDescriptionQuery:
         return await self._db.get(JobDescription, job_id)
 
     async def delete(self, job: JobDescription) -> None:
-        self._db.delete(job)
+        """Soft delete: flag the row so it is excluded from lists while the
+        interview FK references stay valid."""
+        job.is_deleted = True
+        self._db.add(job)
         await self._db.commit()

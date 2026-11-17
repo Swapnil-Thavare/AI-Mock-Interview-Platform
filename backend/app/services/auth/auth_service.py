@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -8,12 +10,13 @@ from app.core.security import (
 )
 from app.exception import CustomException
 from app.schemas.user import Token, UserCreate, UserLogin, UserResponse, UserUpdate
-from app.services.auth.auth_query import UserQuery
+from app.services.auth.auth_query import RevokedTokenQuery, UserQuery
 
 
 class Auth:
     def __init__(self, db: AsyncSession):
         self._query = UserQuery(db)
+        self._tokens = RevokedTokenQuery(db)
 
     async def register(self, user: UserCreate) -> UserResponse:
         if await self._query.get_by_email(user.email):
@@ -41,3 +44,14 @@ class Auth:
     async def update_user(self, user, update: UserUpdate) -> UserResponse:
         updated = await self._query.update(user, update)
         return UserResponse.model_validate(updated)
+
+    async def logout(self, user, payload: dict) -> None:
+        """Revoke the presented access token by denylisting its jti claim
+        until the token's own expiry."""
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        if not jti or not exp:
+            return
+        await self._tokens.revoke(
+            user.id, jti, datetime.fromtimestamp(exp, tz=timezone.utc)
+        )

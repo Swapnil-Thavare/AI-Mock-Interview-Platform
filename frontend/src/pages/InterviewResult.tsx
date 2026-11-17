@@ -8,6 +8,7 @@ import { getApiErrorMessage } from '@/services/api';
 import { interviewService } from '@/services/interviewService';
 import type {
   AnswerEvaluation,
+  Interview as InterviewType,
   InterviewMode,
   InterviewReport,
   ProctoringEventType,
@@ -294,7 +295,8 @@ const QuestionReportCard: React.FC<{
   block: ReportQuestionBlock;
   index: number;
   childrenOf: (id: string) => ReportQuestionBlock[];
-}> = ({ block, index, childrenOf }) => {
+  timeSeconds?: number;
+}> = ({ block, index, childrenOf, timeSeconds }) => {
   const [open, setOpen] = useState(false);
 
   return (
@@ -316,6 +318,15 @@ const QuestionReportCard: React.FC<{
             <Badge color="gray">{block.difficulty}</Badge>
             {block.answer_status !== 'answered' && (
               <Badge color="yellow">{block.answer_status.replace(/_/g, ' ')}</Badge>
+            )}
+            {timeSeconds != null && (
+              <Badge color="gray">
+                <svg className="mr-1 h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 6v6l4 2" />
+                </svg>
+                {formatSeconds(timeSeconds)}
+              </Badge>
             )}
           </div>
         </div>
@@ -582,6 +593,7 @@ export const InterviewResult: React.FC = () => {
   const navigate = useNavigate();
   const { interviewId } = useParams<{ interviewId: string }>();
   const [report, setReport] = useState<InterviewReport | null>(null);
+  const [interview, setInterview] = useState<InterviewType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -610,7 +622,13 @@ export const InterviewResult: React.FC = () => {
           await interviewService.complete(id).catch(() => undefined);
           data = await interviewService.getReport(id);
         }
-        if (!cancelled?.()) setReport(data);
+        const iv = await interviewService
+          .getById(id)
+          .catch(() => null);
+        if (!cancelled?.()) {
+          setReport(data);
+          setInterview(iv);
+        }
       } catch (err) {
         if (!cancelled?.()) {
           setError(
@@ -730,6 +748,29 @@ export const InterviewResult: React.FC = () => {
   const { overview, result, communication, session_integrity } = report;
   const mode = overview.interview_mode as InterviewMode;
   const voiceMode = mode !== 'TEXT';
+
+  // Per-question elapsed seconds derived from consecutive answer submission
+  // timestamps — the first question is measured from the interview start.
+  const answerTimes: Record<string, number> = React.useMemo(() => {
+    if (!interview) return {};
+    const sorted = [...interview.answers]
+      .filter((a) => a.submittedAt)
+      .sort(
+        (a, b) =>
+          new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
+      );
+    const map: Record<string, number> = {};
+    let prev = new Date(interview.startedAt).getTime();
+    for (const a of sorted) {
+      const t = new Date(a.submittedAt).getTime();
+      const qId = a.questionId ?? a.question_id;
+      if (qId && Number.isFinite(t) && Number.isFinite(prev)) {
+        map[qId] = Math.max(1, Math.round((t - prev) / 1000));
+      }
+      if (Number.isFinite(t)) prev = t;
+    }
+    return map;
+  }, [interview]);
 
   const byId = new Map(report.questions.map((q) => [q.question_id, q]));
   const children = new Map<string, ReportQuestionBlock[]>();
@@ -1013,6 +1054,7 @@ export const InterviewResult: React.FC = () => {
                   block={block}
                   index={idx}
                   childrenOf={childrenOf}
+                  timeSeconds={answerTimes[block.question_id]}
                 />
               ))}
             </div>

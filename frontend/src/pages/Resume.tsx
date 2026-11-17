@@ -47,6 +47,7 @@ export const Resume: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [listLoading, setListLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -100,6 +101,21 @@ export const Resume: React.FC = () => {
       setError(getApiErrorMessage(err, 'Could not upload resume. Please try again.'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (deletingId) return;
+    setDeletingId(id);
+    setError('');
+    try {
+      await resumeService.delete(id);
+      setResumes((prev) => prev.filter((r) => r.id !== id));
+      if (resume?.id === id) setResume(null);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Could not delete the resume.'));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -414,11 +430,24 @@ export const Resume: React.FC = () => {
                     })}
                   </p>
                 </div>
-                {r.id === active?.id && (
-                  <span className="ml-auto shrink-0 rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-medium text-primary-800">
-                    Viewing
-                  </span>
-                )}
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  {r.id === active?.id && (
+                    <span className="rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-medium text-primary-800">
+                      Viewing
+                    </span>
+                  )}
+                  <Button
+                    variant="secondary"
+                    className="hover:border-red-200 hover:text-red-700"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(r.id);
+                    }}
+                    disabled={deletingId === r.id}
+                  >
+                    {deletingId === r.id ? 'Deleting...' : 'Delete'}
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

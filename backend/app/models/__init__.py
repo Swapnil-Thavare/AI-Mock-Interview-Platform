@@ -23,6 +23,7 @@ from .interview_result import InterviewResult
 from .job_description import JobDescription
 from .resume import Resume
 from .resume_job_match import ResumeJobMatch
+from .revoked_token import RevokedToken
 from .user import User
 
 __all__ = [
@@ -49,4 +50,5 @@ __all__ = [
     "InterviewAnswerSpeechAnalysis",
     "SpeechAnalysisStatus",
     "InterviewResult",
+    "RevokedToken",
 ]

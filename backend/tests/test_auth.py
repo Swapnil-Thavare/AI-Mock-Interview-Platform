@@ -59,6 +59,60 @@ async def test_me_unauthorized(client):
     assert response.status_code == 401
 
 
+async def test_logout_requires_auth(client):
+    response = await client.post("/api/v1/auth/logout")
+    assert response.status_code == 401
+
+
+async def test_logout_revokes_token(db_client):
+    token = await _register_and_login(
+        db_client, "logout@example.com", "password", "Logout User"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    me = await db_client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+
+    logout = await db_client.post("/api/v1/auth/logout", headers=headers)
+    assert logout.status_code == 200
+
+    me_after = await db_client.get("/api/v1/auth/me", headers=headers)
+    assert me_after.status_code == 401
+
+
+async def test_logout_revokes_only_the_presented_token(db_client):
+    email = "two-sessions@example.com"
+    await db_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "full_name": "Two Sessions",
+            "password": "password",
+        },
+    )
+    login1 = await db_client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "password"},
+    )
+    login2 = await db_client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "password"},
+    )
+    token1 = login1.json()["access_token"]
+    token2 = login2.json()["access_token"]
+
+    await db_client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {token1}"},
+    )
+
+    still_valid = await db_client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token2}"},
+    )
+    assert still_valid.status_code == 200
+
+
 async def test_job_description_ownership(db_client):
     owner_token = await _register_and_login(
         db_client, "owner@example.com", "password", "Owner"

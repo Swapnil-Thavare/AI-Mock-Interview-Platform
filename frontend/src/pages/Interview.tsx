@@ -62,7 +62,6 @@ const CameraPreview: React.FC<{ stream: MediaStream }> = ({ stream }) => {
   );
 };
 
-const QUESTION_TIME = 120;
 // Consent acknowledgement retried in the background — never blocks the
 // interview, and the server keeps the earliest recorded timestamp.
 const CONSENT_MAX_RETRIES = 3;
@@ -88,6 +87,9 @@ export const Interview: React.FC = () => {
   const [consentReady, setConsentReady] = useState(false);
   const [armFailed, setArmFailed] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // Wall-clock timestamp of when the current question was presented — used
+  // to record the real answer time (previously a fixed placeholder value).
+  const questionStartRef = useRef<number>(Date.now());
   // Resume state for orphaned placeholders (F-003): 'record' re-offers the
   // question for recording; 'reprocess' retries stored media server-side.
   const [resumeAction, setResumeAction] = useState<ResumeAction>('fresh');
@@ -223,6 +225,13 @@ export const Interview: React.FC = () => {
     recording.discard,
   ]);
 
+  useEffect(() => {
+    questionStartRef.current = Date.now();
+  }, [current]);
+
+  const elapsedForCurrent = (): number =>
+    Math.max(1, Math.round((Date.now() - questionStartRef.current) / 1000));
+
   const total = interview?.questions.length ?? 0;
   const answeredCount = interview?.answers.length ?? 0;
   const progress = total ? ((answeredCount + (submitting ? 1 : 0)) / total) * 100 : 0;
@@ -325,7 +334,7 @@ export const Interview: React.FC = () => {
             // notes are never sent or evaluated.
             text: voiceFirst ? '' : trimmed,
             skipped: false,
-            timeTaken: QUESTION_TIME,
+            timeTaken: elapsedForCurrent(),
             submittedAt: new Date().toISOString(),
           }
         );
@@ -360,7 +369,7 @@ export const Interview: React.FC = () => {
         questionId: current.id,
         text: '',
         skipped: true,
-        timeTaken: QUESTION_TIME,
+        timeTaken: elapsedForCurrent(),
         submittedAt: new Date().toISOString(),
       });
 
@@ -593,16 +602,7 @@ export const Interview: React.FC = () => {
             Answer each question — your progress saves as you go.
           </p>
         </div>
-        <Timer
-          key={current.id}
-          durationSeconds={QUESTION_TIME}
-          onTimeUp={() => {
-            // Voice-first: time-up still submits — the recording is the answer.
-            if (resumeAction === 'reprocess') void handleReprocess();
-            else if (text.trim() || voiceFirst) void handleSubmit();
-            else void handleSkip();
-          }}
-        />
+        <Timer key={current.id} />
       </div>
 
       {activeMode !== 'TEXT' && devicesReady && (

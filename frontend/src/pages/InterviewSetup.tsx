@@ -257,7 +257,7 @@ export const InterviewSetup: React.FC = () => {
                   <div
                     role="radiogroup"
                     aria-label="Resume"
-                    className="grid max-h-56 gap-2 overflow-y-auto sm:grid-cols-2"
+                    className="max-h-56 space-y-2 overflow-y-auto pr-1"
                   >
                     {resumes.map((r, i) => {
                       const selected = setup.resumeId === r.id;
@@ -270,28 +270,36 @@ export const InterviewSetup: React.FC = () => {
                           tabIndex={selected || (!setup.resumeId && i === 0) ? 0 : -1}
                           onKeyDown={handleRadioKey}
                           onClick={() => update('resumeId', r.id)}
-                          className={cardCls(selected)}
+                          className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                            selected
+                              ? 'border-primary-600 bg-primary-50/60 ring-1 ring-primary-600/30'
+                              : 'border-gray-200 bg-white hover:border-primary-200 hover:bg-primary-50/30'
+                          }`}
                         >
-                          <span className="flex items-center gap-2.5 pr-6">
-                            <span
-                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[10px] font-bold ring-1 ${
-                                selected
-                                  ? 'bg-red-50 text-red-600 ring-red-100'
-                                  : 'bg-gray-50 text-gray-500 ring-gray-200'
-                              }`}
-                            >
-                              PDF
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-[10px] font-bold text-red-600 ring-1 ring-red-100">
+                            PDF
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-gray-900">
+                              {r.fileName}
                             </span>
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-medium text-gray-900">
-                                {r.fileName}
-                              </span>
-                              <span className="mt-0.5 block text-xs text-gray-500">
-                                {new Date(r.uploadedAt).toLocaleDateString()}
-                              </span>
+                            <span className="mt-0.5 block text-xs text-gray-500">
+                              Uploaded {new Date(r.uploadedAt).toLocaleDateString()}
                             </span>
                           </span>
-                          <CheckDot show={selected} />
+                          <span
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                              selected
+                                ? 'border-primary-600 bg-primary-600 text-white'
+                                : 'border-gray-300 bg-white'
+                            }`}
+                          >
+                            {selected && (
+                              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="m5 13 4 4L19 7" />
+                              </svg>
+                            )}
+                          </span>
                         </button>
                       );
                     })}
@@ -311,7 +319,7 @@ export const InterviewSetup: React.FC = () => {
                   <div
                     role="radiogroup"
                     aria-label="Job description"
-                    className="grid max-h-56 gap-2 overflow-y-auto sm:grid-cols-2"
+                    className="max-h-56 space-y-2 overflow-y-auto pr-1"
                   >
                     {jobs.map((j, i) => {
                       const selected = setup.jobDescriptionId === j.id;
@@ -324,9 +332,19 @@ export const InterviewSetup: React.FC = () => {
                           tabIndex={selected || (!setup.jobDescriptionId && i === 0) ? 0 : -1}
                           onKeyDown={handleRadioKey}
                           onClick={() => update('jobDescriptionId', j.id)}
-                          className={cardCls(selected)}
+                          className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                            selected
+                              ? 'border-primary-600 bg-primary-50/60 ring-1 ring-primary-600/30'
+                              : 'border-gray-200 bg-white hover:border-primary-200 hover:bg-primary-50/30'
+                          }`}
                         >
-                          <span className="block min-w-0 pr-6">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 ring-1 ring-primary-100">
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <rect x="2" y="7" width="20" height="14" rx="2" />
+                              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+                            </svg>
+                          </span>
+                          <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium text-gray-900">
                               {j.title}
                             </span>
@@ -334,7 +352,19 @@ export const InterviewSetup: React.FC = () => {
                               {j.company || 'No company specified'}
                             </span>
                           </span>
-                          <CheckDot show={selected} />
+                          <span
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                              selected
+                                ? 'border-primary-600 bg-primary-600 text-white'
+                                : 'border-gray-300 bg-white'
+                            }`}
+                          >
+                            {selected && (
+                              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="m5 13 4 4L19 7" />
+                              </svg>
+                            )}
+                          </span>
                         </button>
                       );
                     })}
@@ -488,16 +518,14 @@ export const InterviewSetup: React.FC = () => {
                     { value: '10', label: '10' },
                   ]}
                 />
-                <Select
-                  label="Time limit (minutes)"
-                  value={String(setup.duration)}
-                  onChange={(e) => update('duration', Number(e.target.value))}
-                  options={[
-                    { value: '15', label: '15' },
-                    { value: '30', label: '30' },
-                    { value: '45', label: '45' },
-                  ]}
-                />
+                <div className="rounded-lg bg-primary-50/60 px-4 py-3 ring-1 ring-primary-100">
+                  <p className="text-xs font-medium text-primary-800">
+                    Timed answers
+                  </p>
+                  <p className="mt-0.5 text-xs text-primary-700">
+                    Your per-answer time is recorded and shown in the report.
+                  </p>
+                </div>
               </div>
             </div>
           </Card>
@@ -509,7 +537,6 @@ export const InterviewSetup: React.FC = () => {
               <span>{setup.questionCount} questions</span>
               <span className="capitalize">{setup.difficulty}</span>
               <span className="capitalize">{setup.type}</span>
-              <span>{setup.duration} min</span>
               <span>{setup.interviewMode === 'TEXT' ? 'Text' : setup.interviewMode === 'AUDIO' ? 'Audio' : 'Video'}</span>
             </div>
             {error && (
