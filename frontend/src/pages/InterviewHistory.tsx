@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
-import { InterviewRow } from '@/components/dashboard/InterviewRow';
+import { InterviewTable } from '@/components/dashboard/InterviewTable';
 import { Button } from '@/components/ui/Button';
 import { interviewService } from '@/services/interviewService';
 import { getApiErrorMessage } from '@/services/api';
@@ -104,7 +104,7 @@ export const InterviewHistory: React.FC = () => {
       ) : (
         <div className="space-y-3">
           {interviews.length ? (
-            interviews.map((interview) => <InterviewRow key={interview.id} interview={interview} />)
+            <InterviewTable interviews={interviews} />
           ) : (
             <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary-50 text-primary-600 ring-1 ring-primary-100">

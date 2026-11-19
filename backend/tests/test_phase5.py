@@ -18,7 +18,9 @@ def _upload_file_bytes(filename: str, content: bytes, content_type: str):
     return (filename, content, content_type)
 
 
-async def _create_interview(db_client, auth_headers, monkeypatch):
+async def _create_interview(
+    db_client, auth_headers, monkeypatch, question_count=1
+):
     monkeypatch.setattr(
         "app.services.resume.resume_service.extract_text_from_pdf",
         lambda _bytes: "Sample resume text",
@@ -46,7 +48,7 @@ async def _create_interview(db_client, auth_headers, monkeypatch):
             "resume_id": resume_id,
             "job_description_id": job_id,
             "difficulty": "medium",
-            "question_count": 1,
+            "question_count": question_count,
             "duration": 30,
             "question_types": ["technical"],
         },
@@ -214,7 +216,9 @@ async def _evaluation_with_follow_up():
 
 
 async def test_follow_up_question_generation_and_limit(db_client, auth_headers, monkeypatch):
-    interview = await _create_interview(db_client, auth_headers, monkeypatch)
+    interview = await _create_interview(
+        db_client, auth_headers, monkeypatch, question_count=2
+    )
     interview_id = interview["id"]
     question_id = interview["questions"][0]["id"]
 

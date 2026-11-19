@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
-import { InterviewRow } from '@/components/dashboard/InterviewRow';
+import { InterviewTable } from '@/components/dashboard/InterviewTable';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { interviewService } from '@/services/interviewService';
@@ -125,8 +125,10 @@ export const Dashboard: React.FC = () => {
       .map((i) => i.result?.score)
       .filter((s): s is number => typeof s === 'number');
     const averageScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    // interviews are newest-first — improvement = latest score minus the
+    // candidate's first completed interview.
     const improvementRate =
-      scores.length > 1 ? scores[scores.length - 1] - scores[0] : 0;
+      scores.length > 1 ? scores[0] - scores[scores.length - 1] : 0;
 
     return {
       total,
@@ -304,7 +306,7 @@ export const Dashboard: React.FC = () => {
       ) : (
         <div className="space-y-3">
           {recent.length ? (
-            recent.map((interview) => <InterviewRow key={interview.id} interview={interview} />)
+            <InterviewTable interviews={recent} />
           ) : (
             <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary-50 text-primary-600 ring-1 ring-primary-100">

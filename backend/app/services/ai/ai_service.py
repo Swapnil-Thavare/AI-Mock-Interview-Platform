@@ -5,7 +5,7 @@ resume-to-JD matching, and interview question generation. The service speaks to
 one provider (Gemini) and returns validated Pydantic objects.
 """
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.core.config import get_settings
 from app.exception import CustomException
@@ -71,6 +71,10 @@ Rules:
 - Mix technical and behavioral questions according to the requested question types.
 - Do not ask about skills not present in the resume unless required by the JD.
 - Return exactly the requested number of questions.
+- Do not repeat or rephrase any question listed under "Already asked questions".
+
+Already asked questions:
+{existing_questions}
 
 Resume analysis:
 {resume}
@@ -233,13 +237,20 @@ class AIService:
         difficulty: str,
         count: int,
         question_types: List[str],
+        existing_questions: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
+        already_asked = (
+            "\n".join(f"- {q}" for q in existing_questions)
+            if existing_questions
+            else "None — this is the first question."
+        )
         prompt = _QUESTIONS_PROMPT.format(
             resume=json.dumps(resume_analysis, ensure_ascii=False, indent=2),
             jd=json.dumps(jd_analysis, ensure_ascii=False, indent=2),
             difficulty=difficulty,
             count=count,
             question_types=", ".join(question_types),
+            existing_questions=already_asked,
         )
         output = await self._provider.complete_json(prompt, InterviewQuestionsOutput)
         return [q.model_dump() for q in output.questions]

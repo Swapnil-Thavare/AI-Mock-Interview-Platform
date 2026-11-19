@@ -5,6 +5,7 @@ import uuid
 
 import anyio
 from fastapi import UploadFile
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -229,6 +230,32 @@ class Interview:
     async def _count_follow_ups(self, interview: InterviewModel) -> int:
         return sum(1 for q in interview.questions if q.is_follow_up)
 
+    async def _answers_submitted(self, interview: InterviewModel) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(InterviewAnswer)
+            .where(InterviewAnswer.interview_id == interview.id)
+        )
+        return (await self._db.exec(stmt)).one()
+
+    def _planned_question_count(self, interview: InterviewModel) -> int:
+        """The candidate-facing question budget: the configured
+        question_count, falling back to the number of non-follow-up
+        questions for interviews created before the column existed."""
+        if interview.question_count:
+            return interview.question_count
+        return sum(
+            1 for q in interview.questions if not q.is_follow_up
+        )
+
+    async def _has_question_budget(self, interview: InterviewModel) -> bool:
+        """Follow-ups and remaining planned questions share one budget —
+        the interview ends once the configured number of answers exists."""
+        return (
+            await self._answers_submitted(interview)
+            < self._planned_question_count(interview)
+        )
+
     @staticmethod
     def _question_to_dict(question: InterviewQuestion) -> Dict[str, Any]:
         return {
@@ -309,6 +336,64 @@ class Interview:
         await self._db.refresh(follow_up_question)
         return follow_up_question
 
+    async def _generate_next_question(
+        self, interview: InterviewModel
+    ) -> Optional[InterviewQuestion]:
+        """Generate the next planned (non-follow-up) question on demand.
+
+        Questions are produced one at a time so the interview never holds
+        more generated questions than the candidate will actually be asked.
+        Already-asked question texts are passed to the model to avoid
+        repeats. Returns None on AI failure — the interview then ends
+        gracefully at the current question.
+        """
+        resume_analysis, jd_analysis, _ = await self._load_context(interview)
+        stmt = select(InterviewQuestion.question_text).where(
+            InterviewQuestion.interview_id == interview.id
+        )
+        existing = list((await self._db.exec(stmt)).all())
+        try:
+            generated = await self._ai.generate_interview_questions(
+                resume_analysis,
+                jd_analysis,
+                interview.difficulty,
+                1,
+                interview.question_types or ["technical"],
+                existing_questions=existing,
+            )
+        except Exception:
+            return None
+        if not generated:
+            return None
+        q = generated[0]
+        raw_type = (q.get("question_type") or "technical").lower()
+        q_type = (
+            QuestionType.TECHNICAL
+            if raw_type == "technical"
+            else QuestionType.BEHAVIORAL
+        )
+        max_order = (
+            await self._db.exec(
+                select(func.max(InterviewQuestion.order)).where(
+                    InterviewQuestion.interview_id == interview.id
+                )
+            )
+        ).one()
+        next_question = InterviewQuestion(
+            interview_id=interview.id,
+            question_text=q["question"],
+            question_type=q_type,
+            difficulty=q.get("difficulty", "medium"),
+            order=max_order + 1,
+            topic=q.get("topic"),
+            expected_focus=q.get("expected_focus"),
+            category=raw_type,
+        )
+        self._db.add(next_question)
+        await self._db.commit()
+        await self._db.refresh(next_question)
+        return next_question
+
     async def _evaluate_and_follow_up(
         self,
         interview: InterviewModel,
@@ -343,7 +428,10 @@ class Interview:
         if evaluation_schema and evaluation_schema.follow_up_required:
             follow_up_count = await self._count_follow_ups(interview)
             max_follow_ups = max(0, get_settings().MAX_FOLLOW_UP_QUESTIONS)
-            if follow_up_count < max_follow_ups:
+            if (
+                follow_up_count < max_follow_ups
+                and await self._has_question_budget(interview)
+            ):
                 follow_up_question = await self._generate_follow_up(
                     interview, question, answer, evaluation_schema
                 )
@@ -500,13 +588,12 @@ class Interview:
             job_analysis = {}
 
         interview = await self._query.create(payload, user_id)
-        count = max(1, min(20, payload.question_count))
         try:
             questions = await self._ai.generate_interview_questions(
             resume_analysis,
             job_analysis,
             payload.difficulty,
-                count,
+                1,
                 payload.question_types or ["technical"],
             )
         except Exception:
@@ -640,14 +727,24 @@ class Interview:
             )
 
         await self._db.refresh(interview)
-        # A generated follow-up is delivered as the immediate next question
-        # (persisted order stays unchanged at the end of the list).
-        next_q = (
-            follow_up_question
-            if follow_up_question is not None
-            else await self._get_next_question(interview)
-        )
-        is_complete = next_q is None
+        # Voice placeholders resolve their next question only after the
+        # recording is transcribed and evaluated in upload_answer_media —
+        # generating one here would pre-empt a possible follow-up.
+        next_q: Optional[InterviewQuestion] = None
+        if not voice_placeholder:
+            # A generated follow-up is delivered as the immediate next
+            # question (persisted order stays at the end of the list).
+            # Follow-ups share the configured question budget: once the
+            # candidate has submitted question_count answers the interview
+            # is complete even if planned questions remain unanswered.
+            has_budget = await self._has_question_budget(interview)
+            if has_budget:
+                next_q = (
+                    follow_up_question
+                    or await self._get_next_question(interview)
+                    or await self._generate_next_question(interview)
+                )
+        is_complete = next_q is None and not voice_placeholder
 
         return SubmitAnswerResponse(
             answer=InterviewAnswerResponse.model_validate(db_answer),
@@ -906,11 +1003,17 @@ class Interview:
             )
             await self._db.refresh(interview)
 
-        next_q = (
-            follow_up_question
-            if follow_up_question is not None
-            else await self._get_next_question(interview)
-        )
+        # Follow-ups share the configured question budget: once the
+        # candidate has submitted question_count answers the interview is
+        # complete even if planned questions remain unanswered.
+        has_budget = await self._has_question_budget(interview)
+        next_q = None
+        if has_budget:
+            next_q = (
+                follow_up_question
+                or await self._get_next_question(interview)
+                or await self._generate_next_question(interview)
+            )
         is_complete = next_q is None
 
         # Attach the just-saved media and its analysis in memory — the
@@ -1069,7 +1172,7 @@ class Interview:
             else None,
             resume_alignment=report.resume_alignment,
             missing_skills=report.missing_or_weak_skills,
-            suggestions=report.recommended_preparation_topics,
+            suggestions=[],
             preparation_topics=report.recommended_preparation_topics,
             question_results=[q.model_dump(mode="json") for q in report.question_wise_summary],
             completion_summary=report.interview_completion_summary,

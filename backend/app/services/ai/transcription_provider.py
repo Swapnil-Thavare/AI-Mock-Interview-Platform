@@ -16,6 +16,7 @@ import logging
 
 import anyio
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from app.core.config import get_settings
@@ -89,7 +90,11 @@ class GeminiTranscriptionProvider(TranscriptionProvider):
                         models[model_index],
                     )
             except Exception as exc:
-                if not _is_retryable(exc):
+                # 404 means the model itself is gone/deprecated — fail over.
+                model_gone = (
+                    isinstance(exc, genai_errors.APIError) and exc.code == 404
+                )
+                if not model_gone and not _is_retryable(exc):
                     raise CustomException(
                         502,
                         f"Transcription request failed: {type(exc).__name__}",
@@ -103,6 +108,10 @@ class GeminiTranscriptionProvider(TranscriptionProvider):
                         model,
                         models[model_index],
                     )
+                elif model_gone:
+                    raise CustomException(
+                        502, f"Transcription model unavailable: {model}"
+                    ) from exc
 
             if attempt < _MAX_ATTEMPTS - 1:
                 delay = _retry_delay(attempt)
