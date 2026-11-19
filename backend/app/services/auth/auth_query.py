@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from sqlalchemy import func
 from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -15,7 +16,9 @@ class UserQuery:
         self._db = db
 
     async def get_by_email(self, email: str) -> Optional[User]:
-        result = await self._db.exec(select(User).where(User.email == email))
+        result = await self._db.exec(
+            select(User).where(func.lower(User.email) == email.lower())
+        )
         return result.first()
 
     async def get_by_id(self, user_id) -> Optional[User]:

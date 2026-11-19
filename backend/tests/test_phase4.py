@@ -16,7 +16,7 @@ async def _auth_token(db_client, email, password, full_name):
         "/api/v1/auth/login",
         json={"email": email, "password": password},
     )
-    return login.json()["access_token"]
+    return login.cookies.get("access_token")
 
 
 async def test_resume_upload_pdf_validation(db_client, auth_headers):

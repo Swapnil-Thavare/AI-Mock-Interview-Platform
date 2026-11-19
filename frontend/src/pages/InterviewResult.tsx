@@ -268,29 +268,6 @@ const EvalDetail: React.FC<{ evaluation: AnswerEvaluation }> = ({
   </div>
 );
 
-const speechSummaryLine = (analysis: SpeechAnalysis): string | null => {
-  const parts: string[] = [];
-  if (analysis.wpm_recording != null) {
-    parts.push(`${analysis.wpm_recording} wpm`);
-  }
-  const fillers = fillerSplit(analysis);
-  if (fillers.definite != null || fillers.possible != null) {
-    parts.push(
-      `${metric(fillers.definite)} definite / ${metric(
-        fillers.possible
-      )} possible fillers`
-    );
-  }
-  if (analysis.pause_count != null) {
-    parts.push(
-      `${analysis.pause_count} pauses (${formatSeconds(
-        analysis.pause_total_seconds
-      )})`
-    );
-  }
-  return parts.length ? parts.join(' · ') : null;
-};
-
 const QuestionReportCard: React.FC<{
   block: ReportQuestionBlock;
   index: number;
@@ -391,12 +368,6 @@ const QuestionBody: React.FC<{ block: ReportQuestionBlock }> = ({ block }) => (
       block.answer_status === 'answered' && (
         <p className="text-gray-500">No evaluation is available for this answer.</p>
       )
-    )}
-    {block.speech_analysis && speechSummaryLine(block.speech_analysis) && (
-      <p className="text-xs text-gray-500">
-        <span className="font-medium">Delivery observations:</span>{' '}
-        {speechSummaryLine(block.speech_analysis)}
-      </p>
     )}
   </div>
 );
@@ -650,6 +621,31 @@ export const InterviewResult: React.FC = () => {
     };
   }, [load]);
 
+  // Per-question elapsed seconds derived from consecutive answer submission
+  // timestamps — the first question is measured from the interview start.
+  // NOTE: hooks must run before the early returns below (loading/error/
+  // !report) or React throws "rendered more hooks than expected".
+  const answerTimes: Record<string, number> = React.useMemo(() => {
+    if (!interview) return {};
+    const sorted = [...interview.answers]
+      .filter((a) => a.submittedAt)
+      .sort(
+        (a, b) =>
+          new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
+      );
+    const map: Record<string, number> = {};
+    let prev = new Date(interview.startedAt).getTime();
+    for (const a of sorted) {
+      const t = new Date(a.submittedAt).getTime();
+      const qId = a.questionId ?? a.question_id;
+      if (qId && Number.isFinite(t) && Number.isFinite(prev)) {
+        map[qId] = Math.max(1, Math.round((t - prev) / 1000));
+      }
+      if (Number.isFinite(t)) prev = t;
+    }
+    return map;
+  }, [interview]);
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -749,28 +745,12 @@ export const InterviewResult: React.FC = () => {
   const mode = overview.interview_mode as InterviewMode;
   const voiceMode = mode !== 'TEXT';
 
-  // Per-question elapsed seconds derived from consecutive answer submission
-  // timestamps — the first question is measured from the interview start.
-  const answerTimes: Record<string, number> = React.useMemo(() => {
-    if (!interview) return {};
-    const sorted = [...interview.answers]
-      .filter((a) => a.submittedAt)
-      .sort(
-        (a, b) =>
-          new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
-      );
-    const map: Record<string, number> = {};
-    let prev = new Date(interview.startedAt).getTime();
-    for (const a of sorted) {
-      const t = new Date(a.submittedAt).getTime();
-      const qId = a.questionId ?? a.question_id;
-      if (qId && Number.isFinite(t) && Number.isFinite(prev)) {
-        map[qId] = Math.max(1, Math.round((t - prev) / 1000));
-      }
-      if (Number.isFinite(t)) prev = t;
-    }
-    return map;
-  }, [interview]);
+  // Older reports stored the same AI list in both fields — drop duplicates
+  // so each item renders once.
+  const prepTopics = result.preparation_topics ?? [];
+  const extraSuggestions = (result.suggestions ?? []).filter(
+    (s) => !prepTopics.includes(s)
+  );
 
   const byId = new Map(report.questions.map((q) => [q.question_id, q]));
   const children = new Map<string, ReportQuestionBlock[]>();
@@ -870,7 +850,7 @@ export const InterviewResult: React.FC = () => {
             </div>
             <Badge color="primary">{mode}</Badge>
           </div>
-          <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-gray-100 pt-4 sm:grid-cols-4">
+          <dl className="mt-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-4 border-t border-gray-100 pt-4">
             <MetaItem
               label="Candidate"
               value={report.candidate_name || '—'}
@@ -888,14 +868,6 @@ export const InterviewResult: React.FC = () => {
             <MetaItem
               label="Interview date"
               value={formatDate(overview.created_at)}
-            />
-            <MetaItem
-              label="Report ID"
-              value={
-                <span className="break-all font-mono text-xs">
-                  {report.report_id}
-                </span>
-              }
             />
           </dl>
         </Card>
@@ -1175,33 +1147,31 @@ export const InterviewResult: React.FC = () => {
 
         {/* H. Final recommendations */}
         <Section title="Recommendations">
-          {(!result.preparation_topics || result.preparation_topics.length === 0) &&
-          (!result.suggestions || result.suggestions.length === 0) ? (
+          {prepTopics.length === 0 && extraSuggestions.length === 0 ? (
             <p className="text-sm text-gray-500">
               No specific recommendations were recorded for this interview.
             </p>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
-              {result.preparation_topics &&
-                result.preparation_topics.length > 0 && (
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
-                      Suggested preparation topics
-                    </div>
-                    <ul className="mt-1 list-inside list-disc text-sm text-gray-700">
-                      {result.preparation_topics.map((t) => (
-                        <li key={t}>{t}</li>
-                      ))}
-                    </ul>
+              {prepTopics.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                    Suggested preparation topics
                   </div>
-                )}
-              {result.suggestions && result.suggestions.length > 0 && (
+                  <ul className="mt-1 list-inside list-disc text-sm text-gray-700">
+                    {prepTopics.map((t) => (
+                      <li key={t}>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {extraSuggestions.length > 0 && (
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
                     Recommendations
                   </div>
                   <ul className="mt-1 list-inside list-disc text-sm text-gray-700">
-                    {result.suggestions.map((s) => (
+                    {extraSuggestions.map((s) => (
                       <li key={s}>{s}</li>
                     ))}
                   </ul>
@@ -1221,7 +1191,6 @@ export const InterviewResult: React.FC = () => {
               — AI-powered mock interview assessment. Scores reflect the
               evaluations recorded at interview completion.
             </span>
-            <span className="font-mono break-all">Report ID: {report.report_id}</span>
           </div>
           <p className="mt-1">
             Generated {formatDateTime(report.generated_at)} ·{' '}

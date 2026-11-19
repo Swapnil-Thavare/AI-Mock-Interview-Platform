@@ -359,7 +359,7 @@ async def test_resume_delete_rejects_other_users_resume(
         json={"email": "someone-else@example.com", "password": "password"},
     )
     other_headers = {
-        "Authorization": f"Bearer {login.json()['access_token']}"
+        "Authorization": f"Bearer {login.cookies.get('access_token')}"
     }
 
     delete = await db_client.delete(

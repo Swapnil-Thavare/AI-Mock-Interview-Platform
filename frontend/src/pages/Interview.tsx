@@ -40,24 +40,22 @@ const CameraPreview: React.FC<{ stream: MediaStream }> = ({ stream }) => {
     }
   }, [stream]);
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-900 shadow-sm">
+    <div className="relative h-28 w-44 shrink-0 overflow-hidden rounded-lg border border-gray-300 bg-gray-900 shadow-sm">
       <video
         ref={ref}
         autoPlay
         muted
         playsInline
         aria-label="Camera preview"
-        className="h-44 w-full -scale-x-100 object-cover sm:h-52"
+        className="h-full w-full -scale-x-100 object-contain"
       />
-      <div className="flex items-center gap-2 bg-gray-900 px-3 py-1.5">
+      <span className="absolute bottom-1 left-1 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-gray-200">
         <span
-          className="h-1.5 w-1.5 rounded-full bg-red-500 motion-safe:animate-pulse"
+          className="h-1 w-1 rounded-full bg-red-500 motion-safe:animate-pulse"
           aria-hidden="true"
         />
-        <span className="text-[11px] font-medium text-gray-300">
-          Your live camera preview
-        </span>
-      </div>
+        LIVE
+      </span>
     </div>
   );
 };
@@ -94,6 +92,10 @@ export const Interview: React.FC = () => {
   // question for recording; 'reprocess' retries stored media server-side.
   const [resumeAction, setResumeAction] = useState<ResumeAction>('fresh');
   const [resumeAnswerId, setResumeAnswerId] = useState<string | null>(null);
+  // True only when the "record again" notice reflects a genuinely
+  // interrupted recording (page reload or failed capture) — not the
+  // normal in-flight submit placeholder.
+  const [resumeNotice, setResumeNotice] = useState(false);
   const proctoring = useProctoring({
     stream: recording.stream,
     interviewId,
@@ -169,6 +171,7 @@ export const Interview: React.FC = () => {
       const target = pickResumeTarget(data.questions, data.answers, mode);
       setResumeAction(target.action);
       setResumeAnswerId(target.answerId);
+      setResumeNotice(target.action === 'record');
       setCurrent(target.question);
       setText('');
       setEvaluation(null);
@@ -232,10 +235,15 @@ export const Interview: React.FC = () => {
   const elapsedForCurrent = (): number =>
     Math.max(1, Math.round((Date.now() - questionStartRef.current) / 1000));
 
-  const total = interview?.questions.length ?? 0;
+  // The candidate-facing budget is the configured question_count —
+  // adaptive follow-ups share it rather than extending the interview.
+  const plannedQuestions =
+    interview?.questions.filter((q) => !q.is_follow_up) ?? [];
+  const total =
+    interview?.setup.questionCount || plannedQuestions.length || 0;
   const answeredCount = interview?.answers.length ?? 0;
   const progress = total ? ((answeredCount + (submitting ? 1 : 0)) / total) * 100 : 0;
-  const isLast = !current || current.id === interview?.questions[interview.questions.length - 1]?.id;
+  const isLast = !current || answeredCount + 1 >= total;
 
   const voiceFirst = activeMode !== 'TEXT';
 
@@ -248,6 +256,7 @@ export const Interview: React.FC = () => {
       setInterview(updated);
       setResumeAction('fresh');
       setResumeAnswerId(null);
+      setResumeNotice(false);
       if (outcome.is_complete || outcome.next_question == null) {
         await handleEnd(updated);
         return;
@@ -274,6 +283,7 @@ export const Interview: React.FC = () => {
       // capture+upload instead of re-submitting the answer.
       setResumeAnswerId(answerId);
       setResumeAction('record');
+      setResumeNotice(true);
       if (recording.armed) recording.start();
     };
     if (!media) {
@@ -375,6 +385,9 @@ export const Interview: React.FC = () => {
 
       const updated = await interviewService.getById(interviewId);
       setInterview(updated);
+      setResumeAction('fresh');
+      setResumeAnswerId(null);
+      setResumeNotice(false);
 
       if (response.is_complete || response.next_question == null) {
         await handleEnd(updated);
@@ -575,32 +588,37 @@ export const Interview: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-bold tracking-tight text-gray-900">
-              {interview?.title || 'Mock interview'}
-            </h2>
-            {interview?.interview_mode && interview.interview_mode !== 'TEXT' && (
-              <Badge color="primary">
-                {interview.interview_mode === 'VIDEO' ? 'Video' : 'Audio'}
-              </Badge>
-            )}
-            {recording.state === 'recording' && (
-              <Badge color="red">
-                <span
-                  className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600 motion-safe:animate-pulse"
-                  aria-hidden="true"
-                />
-                Recording
-              </Badge>
-            )}
-            {recording.state === 'error' && (
-              <Badge color="red">Recording stopped</Badge>
-            )}
+        <div className="flex min-w-0 items-start gap-3">
+          {activeMode === 'VIDEO' && recording.stream && (
+            <CameraPreview stream={recording.stream} />
+          )}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-bold tracking-tight text-gray-900">
+                {interview?.title || 'Mock interview'}
+              </h2>
+              {interview?.interview_mode && interview.interview_mode !== 'TEXT' && (
+                <Badge color="primary">
+                  {interview.interview_mode === 'VIDEO' ? 'Video' : 'Audio'}
+                </Badge>
+              )}
+              {recording.state === 'recording' && (
+                <Badge color="red">
+                  <span
+                    className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600 motion-safe:animate-pulse"
+                    aria-hidden="true"
+                  />
+                  Recording
+                </Badge>
+              )}
+              {recording.state === 'error' && (
+                <Badge color="red">Recording stopped</Badge>
+              )}
+            </div>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Answer each question — your progress saves as you go.
+            </p>
           </div>
-          <p className="mt-0.5 text-sm text-gray-500">
-            Answer each question — your progress saves as you go.
-          </p>
         </div>
         <Timer key={current.id} />
       </div>
@@ -657,9 +675,9 @@ export const Interview: React.FC = () => {
             style={{ width: `${Math.min(progress, 100)}%` }}
           />
         </div>
-        {interview && interview.questions.length > 1 && (
+        {interview && plannedQuestions.length > 1 && (
           <div className="mt-2 flex gap-1.5" aria-hidden="true">
-            {interview.questions.map((q) => {
+            {plannedQuestions.map((q) => {
               const answered = interview.answers.some(
                 (a) => (a.questionId ?? a.question_id) === q.id
               );
@@ -687,15 +705,9 @@ export const Interview: React.FC = () => {
         </p>
       )}
 
-      {activeMode === 'VIDEO' && recording.stream && (
-        <div className="mb-4">
-          <CameraPreview stream={recording.stream} />
-        </div>
-      )}
-
       <QuestionCard question={current} index={answeredCount} total={Math.max(total, answeredCount + 1)} />
 
-      {voiceFirst && resumeAction === 'record' && resumeAnswerId && (
+      {voiceFirst && resumeNotice && resumeAction === 'record' && resumeAnswerId && (
         <p className="mt-3 text-sm text-amber-700">
           Your previous recording for this question was not completed —
           please record it again.
@@ -795,14 +807,21 @@ export const Interview: React.FC = () => {
           )}
           {mediaUpload === 'failed' && (
             <span className="text-red-600">
-              Recording processing failed — your answer was saved.{' '}
-              <button
-                type="button"
-                className="font-medium underline"
-                onClick={() => void retryMediaUpload()}
-              >
-                Retry
-              </button>
+              {pendingUploadRef.current
+                ? 'Recording processing failed — your answer was saved.'
+                : 'This recording could not be used — please record a shorter answer.'}
+              {pendingUploadRef.current && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="font-medium underline"
+                    onClick={() => void retryMediaUpload()}
+                  >
+                    Retry
+                  </button>
+                </>
+              )}
             </span>
           )}
           {mediaUpload === 'eval_failed' && (

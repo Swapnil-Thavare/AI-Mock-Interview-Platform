@@ -12,12 +12,22 @@ below a 20 MB total request size; the app's 25 MB upload cap can exceed
 that for very large recordings, which then surface as a FAILED
 transcription state recoverable by retry/re-upload.
 """
+import logging
+
 import anyio
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from app.core.config import get_settings
 from app.exception import CustomException
+from app.services.ai.gemini_provider import (
+    _is_retryable,
+    _retry_delay,
+    get_model_chain,
+)
+
+logger = logging.getLogger(__name__)
 
 _TRANSCRIBE_PROMPT = (
     "Transcribe the speech in this recording into plain text. "
@@ -27,6 +37,7 @@ _TRANSCRIBE_PROMPT = (
 )
 
 _DEFAULT_TIMEOUT = 90.0
+_MAX_ATTEMPTS = 6
 
 
 class TranscriptionProvider:
@@ -46,36 +57,81 @@ class GeminiTranscriptionProvider(TranscriptionProvider):
                 503, "Transcription service is not configured."
             )
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        model = settings.GEMINI_MODEL or "gemini-3.6-flash"
+        models = get_model_chain()
+        model_index = 0
         timeout = float(settings.TRANSCRIPTION_TIMEOUT or _DEFAULT_TIMEOUT)
 
-        try:
-            with anyio.move_on_after(timeout) as cancel_scope:
-                response = await client.aio.models.generate_content(
-                    model=model,
-                    contents=[
-                        types.Part.from_bytes(
-                            data=content, mime_type=mime_type
-                        ),
-                        _TRANSCRIBE_PROMPT,
-                    ],
+        last_error: Exception | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            model = models[model_index]
+            try:
+                with anyio.move_on_after(timeout) as cancel_scope:
+                    response = await client.aio.models.generate_content(
+                        model=model,
+                        contents=[
+                            types.Part.from_bytes(
+                                data=content, mime_type=mime_type
+                            ),
+                            _TRANSCRIBE_PROMPT,
+                        ],
+                    )
+                if cancel_scope.cancelled_caught:
+                    raise TimeoutError("Transcription request timed out.")
+                return (response.text or "").strip()
+            except CustomException:
+                raise
+            except TimeoutError as exc:
+                last_error = exc
+                if model_index < len(models) - 1:
+                    model_index += 1
+                    logger.warning(
+                        "Transcription timed out on %s; switching to %s",
+                        model,
+                        models[model_index],
+                    )
+            except Exception as exc:
+                # 404 means the model itself is gone/deprecated — fail over.
+                model_gone = (
+                    isinstance(exc, genai_errors.APIError) and exc.code == 404
                 )
-            if cancel_scope.cancelled_caught:
-                raise CustomException(
-                    504, "Transcription request timed out."
+                if not model_gone and not _is_retryable(exc):
+                    raise CustomException(
+                        502,
+                        f"Transcription request failed: {type(exc).__name__}",
+                    ) from exc
+                last_error = exc
+                if model_index < len(models) - 1:
+                    model_index += 1
+                    logger.warning(
+                        "Transcription %s failed on %s; switching to %s",
+                        type(exc).__name__,
+                        model,
+                        models[model_index],
+                    )
+                elif model_gone:
+                    raise CustomException(
+                        502, f"Transcription model unavailable: {model}"
+                    ) from exc
+
+            if attempt < _MAX_ATTEMPTS - 1:
+                delay = _retry_delay(attempt)
+                logger.warning(
+                    "Transcription attempt %d/%d failed (%s); retrying in %.1fs",
+                    attempt + 1,
+                    _MAX_ATTEMPTS,
+                    type(last_error).__name__,
+                    delay,
                 )
-            return (response.text or "").strip()
-        except CustomException:
-            raise
-        except TimeoutError as exc:
+                await anyio.sleep(delay)
+
+        if isinstance(last_error, TimeoutError):
             raise CustomException(
                 504, "Transcription request timed out."
-            ) from exc
-        except Exception as exc:
-            raise CustomException(
-                502,
-                f"Transcription request failed: {type(exc).__name__}",
-            ) from exc
+            ) from last_error
+        raise CustomException(
+            502,
+            f"Transcription request failed: {type(last_error).__name__}",
+        ) from last_error
 
 
 def default_transcription_provider() -> TranscriptionProvider:

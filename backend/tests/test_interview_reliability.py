@@ -256,7 +256,7 @@ async def test_nested_follow_up_delivered_immediately(
     db_client, auth_headers, monkeypatch
 ):
     interview = await _create_interview(
-        db_client, auth_headers, monkeypatch, num_questions=2
+        db_client, auth_headers, monkeypatch, num_questions=4
     )
     q1, q2 = interview["questions"][0]["id"], interview["questions"][1]["id"]
 

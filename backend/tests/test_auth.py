@@ -11,7 +11,7 @@ async def _register_and_login(client, email, password, full_name):
     login = await client.post(
         "/api/v1/auth/login", json={"email": email, "password": password}
     )
-    return login.json()["access_token"]
+    return login.cookies.get("access_token")
 
 
 async def test_register(db_client):
@@ -98,8 +98,8 @@ async def test_logout_revokes_only_the_presented_token(db_client):
         "/api/v1/auth/login",
         json={"email": email, "password": "password"},
     )
-    token1 = login1.json()["access_token"]
-    token2 = login2.json()["access_token"]
+    token1 = login1.cookies.get("access_token")
+    token2 = login2.cookies.get("access_token")
 
     await db_client.post(
         "/api/v1/auth/logout",

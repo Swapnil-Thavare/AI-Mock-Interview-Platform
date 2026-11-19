@@ -41,12 +41,12 @@ Job seekers rarely get realistic, structured interview practice tailored to thei
 React SPA (Vite)  ──axios──▶  FastAPI /api/v1  ──▶  Services  ──▶  Queries/Repositories
         │                          │                    │                  │
         │                          ▼                    ▼                  ▼
-   localStorage (JWT)      JWT auth dependency    AIService ──▶ Gemini   PostgreSQL
+   HttpOnly cookie        JWT auth dependency    AIService ──▶ Gemini   PostgreSQL
 ```
 
 - `app/api/v1/` contains thin routers; all business logic lives in `app/services/`; data access in `*_query.py` modules and SQLModel models in `app/models/`.
 - `AIService` (in `app/services/ai/`) is the single entry point for all AI work. It builds prompts, calls `AIProviderInterface.complete_json(prompt, schema)`, and returns validated Pydantic objects. `GeminiProvider` is selected via `AI_PROVIDER`.
-- The frontend has a typed service layer (`src/services/`) that normalizes snake_case API responses; `api.ts` attaches the JWT and handles 401s globally.
+- The frontend has a typed service layer (`src/services/`) that normalizes snake_case API responses; `api.ts` sends credentials (`withCredentials`) and handles 401s globally.
 
 ## 6. Frontend and Backend Structure
 
@@ -90,7 +90,7 @@ All schema changes go through Alembic — never `SQLModel.metadata.create_all()`
 
 1. `POST /api/v1/auth/register` validates input (Pydantic bounds), hashes the password with bcrypt, and creates the user.
 2. `POST /api/v1/auth/login` verifies credentials and returns a JWT (`sub` = user id, exp = `ACCESS_TOKEN_EXPIRE_MINUTES`).
-3. The frontend stores the token in `localStorage` and attaches `Authorization: Bearer <token>` via an Axios request interceptor.
+3. `/auth/login` returns the user and sets the JWT in an `HttpOnly`/`SameSite=Lax` session cookie; the frontend sends it automatically via `withCredentials` — the token is never exposed to JavaScript or the response body.
 4. `get_current_user` decodes the token, loads the user, and rejects missing, invalid, expired, or inactive users.
 5. On any non-auth 401 the frontend clears the session and redirects to `/login`.
 
@@ -129,7 +129,9 @@ Backend (`backend/.env`, see `.env.example`):
 | `DATABASE_URL_TEST` | Test database URL (pytest) |
 | `JWT_SECRET_KEY` | Secret for signing JWTs. Dev default is `change-me` — **must be overridden in any real environment** |
 | `JWT_ALGORITHM` | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Token lifetime |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Token lifetime (also the session-cookie `Max-Age`) |
+| `AUTH_COOKIE_SECURE` | Set `true` in production so the session cookie is only sent over HTTPS |
+| `AUTH_COOKIE_SAMESITE` | Session cookie `SameSite` attribute (default `lax`) |
 | `CORS_ORIGINS` | Comma-separated allowed origins |
 | `SUPABASE_URL` | Supabase project URL (storage backend for resumes + interview media). Each environment uses its own Supabase project — local `.env` points at the development project |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service-role key — backend only, never exposed to the client |

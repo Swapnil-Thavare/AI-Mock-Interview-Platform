@@ -106,7 +106,7 @@ async def test_proctoring_events_cross_user_404(db_client, auth_headers, monkeyp
         "/api/v1/auth/login",
         json={"email": other.json()["email"], "password": "password"},
     )
-    other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    other_headers = {"Authorization": f"Bearer {login.cookies.get('access_token')}"}
     for method in ("post", "get"):
         func = getattr(db_client, method)
         response = await func(
