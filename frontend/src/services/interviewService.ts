@@ -161,7 +161,7 @@ const questionTypesFromSetup = (setup: InterviewSetup): string[] => {
   return ['technical', 'behavioral'];
 };
 
-const getToken = () => localStorage.getItem('token') ?? '';
+const SESSION_CACHE_KEY = 'session';
 
 const VALID_ANSWER_STATUSES: ReportAnswerStatus[] = [
   'answered',
@@ -258,7 +258,7 @@ const MAX_RECORDING_BYTES = MAX_RECORDING_MB * 1024 * 1024;
 const MEDIA_PROCESSING_TIMEOUT_MS = 180_000;
 const STANDARD_LONG_TIMEOUT_MS = 120_000;
 
-const cacheKey = (id: string) => `${getToken()}:${id}`;
+const cacheKey = (id: string) => `${SESSION_CACHE_KEY}:${id}`;
 
 export const interviewService = {
   create: async (setup: InterviewSetup): Promise<Interview> => {
@@ -427,22 +427,22 @@ export const interviewService = {
     return data as ProctoringSummary;
   },
 
-  // pagehide-safe upload: sendBeacon cannot attach the Authorization header,
-  // so keepalive fetch is used instead.
+  // pagehide-safe upload: the session cookie rides along automatically,
+  // so a keepalive fetch replaces sendBeacon (which cannot set headers
+  // and does not guarantee credential mode on all browsers).
   flushProctoringEventsKeepalive: (
     interviewId: string,
     events: ProctoringEventInput[]
   ): boolean => {
-    const token = getToken();
-    if (!token || events.length === 0) return false;
+    if (events.length === 0) return false;
     try {
       const result = fetch(
         `${api.defaults.baseURL}/interviews/${interviewId}/proctoring-events`,
         {
           method: 'POST',
           keepalive: true,
+          credentials: 'include',
           headers: {
-            Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ events }),

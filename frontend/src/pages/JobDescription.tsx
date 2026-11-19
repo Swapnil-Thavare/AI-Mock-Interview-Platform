@@ -232,7 +232,7 @@ export const JobDescription: React.FC = () => {
                 Reset
               </Button>
               <Button type="submit" className="flex-1 shadow-sm shadow-primary-600/20" disabled={loading}>
-                {loading ? 'Analyzing...' : 'Analyze job description'}
+                {loading ? 'Analyzing...' : 'Analyze & Add'}
               </Button>
             </div>
           </form>

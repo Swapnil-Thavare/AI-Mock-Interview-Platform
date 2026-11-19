@@ -650,6 +650,31 @@ export const InterviewResult: React.FC = () => {
     };
   }, [load]);
 
+  // Per-question elapsed seconds derived from consecutive answer submission
+  // timestamps — the first question is measured from the interview start.
+  // NOTE: hooks must run before the early returns below (loading/error/
+  // !report) or React throws "rendered more hooks than expected".
+  const answerTimes: Record<string, number> = React.useMemo(() => {
+    if (!interview) return {};
+    const sorted = [...interview.answers]
+      .filter((a) => a.submittedAt)
+      .sort(
+        (a, b) =>
+          new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
+      );
+    const map: Record<string, number> = {};
+    let prev = new Date(interview.startedAt).getTime();
+    for (const a of sorted) {
+      const t = new Date(a.submittedAt).getTime();
+      const qId = a.questionId ?? a.question_id;
+      if (qId && Number.isFinite(t) && Number.isFinite(prev)) {
+        map[qId] = Math.max(1, Math.round((t - prev) / 1000));
+      }
+      if (Number.isFinite(t)) prev = t;
+    }
+    return map;
+  }, [interview]);
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -748,29 +773,6 @@ export const InterviewResult: React.FC = () => {
   const { overview, result, communication, session_integrity } = report;
   const mode = overview.interview_mode as InterviewMode;
   const voiceMode = mode !== 'TEXT';
-
-  // Per-question elapsed seconds derived from consecutive answer submission
-  // timestamps — the first question is measured from the interview start.
-  const answerTimes: Record<string, number> = React.useMemo(() => {
-    if (!interview) return {};
-    const sorted = [...interview.answers]
-      .filter((a) => a.submittedAt)
-      .sort(
-        (a, b) =>
-          new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
-      );
-    const map: Record<string, number> = {};
-    let prev = new Date(interview.startedAt).getTime();
-    for (const a of sorted) {
-      const t = new Date(a.submittedAt).getTime();
-      const qId = a.questionId ?? a.question_id;
-      if (qId && Number.isFinite(t) && Number.isFinite(prev)) {
-        map[qId] = Math.max(1, Math.round((t - prev) / 1000));
-      }
-      if (Number.isFinite(t)) prev = t;
-    }
-    return map;
-  }, [interview]);
 
   const byId = new Map(report.questions.map((q) => [q.question_id, q]));
   const children = new Map<string, ReportQuestionBlock[]>();

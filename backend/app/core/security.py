@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import ExpiredSignatureError, PyJWTError
 from pwdlib import PasswordHash
@@ -16,6 +16,8 @@ from app.models.user import User
 from app.services.auth.auth_query import RevokedTokenQuery, UserQuery
 
 hasher = PasswordHash((BcryptHasher(),))
+
+ACCESS_TOKEN_COOKIE = "access_token"
 
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login", auto_error=False
@@ -59,8 +61,19 @@ def decode_access_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+async def get_access_token(
+    request: Request,
+    bearer: Optional[str] = Depends(oauth2_scheme),
+) -> Optional[str]:
+    """Prefer the Authorization header (API clients, tests); fall back to
+    the HttpOnly session cookie set by /auth/login."""
+    if bearer:
+        return bearer
+    return request.cookies.get(ACCESS_TOKEN_COOKIE)
+
+
 async def get_current_user(
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: Optional[str] = Depends(get_access_token),
     db: AsyncSession = Depends(get_session),
 ) -> User:
     credentials_exception = HTTPException(

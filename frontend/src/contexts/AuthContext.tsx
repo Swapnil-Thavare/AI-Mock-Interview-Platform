@@ -14,7 +14,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const STORAGE_KEY = 'token';
 const USER_KEY = 'user';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -23,34 +22,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem(STORAGE_KEY);
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
     let ignore = false;
     const init = async () => {
       try {
+        // The HttpOnly session cookie is sent automatically; /auth/me
+        // returns the user when a session exists and 401s otherwise.
         const fromApi = await authService.getCurrentUser();
         if (!fromApi) {
-          // Token is invalid or expired; clear stale local state.
           authService.clearSession();
-          if (!ignore) {
-            setUser(null);
-            setLoading(false);
-          }
-          return;
+        } else if (!ignore) {
+          localStorage.setItem(USER_KEY, JSON.stringify(fromApi));
         }
         if (!ignore) {
-          localStorage.setItem(USER_KEY, JSON.stringify(fromApi));
           setUser(fromApi);
         }
       } catch {
         authService.clearSession();
         if (!ignore) {
           setUser(null);
-          setLoading(false);
         }
       } finally {
         if (!ignore) {
@@ -65,20 +54,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const persist = (token: string, next: User) => {
-    localStorage.setItem(STORAGE_KEY, token);
+  const persist = (next: User) => {
     localStorage.setItem(USER_KEY, JSON.stringify(next));
     setUser(next);
   };
 
   const login = async (email: string, password: string) => {
-    const res = await authService.login({ email, password });
-    persist(res.token, res.user);
+    persist(await authService.login({ email, password }));
   };
 
   const register = async (name: string, email: string, password: string) => {
-    const res = await authService.register({ name, email, password });
-    persist(res.token, res.user);
+    persist(await authService.register({ name, email, password }));
   };
 
   const updateUser = (next: User) => {

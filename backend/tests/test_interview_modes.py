@@ -15,7 +15,7 @@ async def _auth_token(db_client, email, password, full_name):
     login = await db_client.post(
         "/api/v1/auth/login", json={"email": email, "password": password}
     )
-    return login.json()["access_token"]
+    return login.cookies.get("access_token")
 
 
 async def _create_interview(db_client, auth_headers, monkeypatch, mode=None):

@@ -30,71 +30,50 @@ const normalizeUser = (data: Record<string, unknown>): User => ({
   createdAt: (data.createdAt as string) ?? (data.created_at as string) ?? undefined,
 });
 
-const getToken = () => localStorage.getItem('token') ?? '';
-const getInFlightKey = () => getToken();
+// Cookie auth: there is a single session per browser, so in-flight
+// /auth/me calls are deduped under one constant key.
+const SESSION_KEY = 'session';
 const getCurrentUserInFlight = new Map<string, Promise<User | null>>();
 
 const clearSession = () => {
-  localStorage.removeItem('token');
   localStorage.removeItem('user');
   localStorage.removeItem('currentInterviewId');
   getCurrentUserInFlight.clear();
 };
 
 export const authService = {
-  login: async (input: LoginInput): Promise<{ token: string; user: User }> => {
-    const { data } = await api.post('/auth/login', input);
-    const token = (data.access_token as string) ?? (data.token as string);
-    if (!token) {
-      throw new Error('Login did not return a token');
-    }
-
-    localStorage.setItem('token', token);
+  login: async (input: LoginInput): Promise<User> => {
+    // The backend sets an HttpOnly session cookie on success; the token
+    // is never returned in the response body.
+    await api.post('/auth/login', input);
     const user = await authService.getCurrentUser();
     if (!user) {
       throw new Error('Could not load user after login');
     }
-    localStorage.setItem('user', JSON.stringify(user));
-    return { token, user };
+    return user;
   },
 
-  register: async (input: RegisterInput): Promise<{ token: string; user: User }> => {
-    const { data } = await api.post('/auth/register', {
+  register: async (input: RegisterInput): Promise<User> => {
+    await api.post('/auth/register', {
       full_name: input.name,
       email: input.email,
       password: input.password,
     });
-
-    const id = String(data.user_id ?? data.id ?? '');
-
-    // The real backend only returns a message and user_id. Log in to get a token.
-    const loginRes = await authService.login({ email: input.email, password: input.password });
-
-    const user: User = {
-      ...loginRes.user,
-      id,
-      name: input.name,
-      full_name: input.name,
-      email: input.email,
-    };
-
-    localStorage.setItem('user', JSON.stringify(user));
-    return { token: loginRes.token, user };
+    return authService.login({ email: input.email, password: input.password });
   },
 
   getCurrentUser: async (): Promise<User | null> => {
-    const key = getInFlightKey();
-    const pending = getCurrentUserInFlight.get(key);
+    const pending = getCurrentUserInFlight.get(SESSION_KEY);
     if (pending) return pending;
 
     const promise = api.get('/auth/me')
       .then(({ data }) => normalizeUser(data as Record<string, unknown>))
       .catch(() => null)
       .finally(() => {
-        getCurrentUserInFlight.delete(key);
+        getCurrentUserInFlight.delete(SESSION_KEY);
       });
 
-    getCurrentUserInFlight.set(key, promise);
+    getCurrentUserInFlight.set(SESSION_KEY, promise);
     return promise;
   },
 
@@ -102,9 +81,7 @@ export const authService = {
 
   logout: async (): Promise<void> => {
     try {
-      if (getToken()) {
-        await api.post('/auth/logout');
-      }
+      await api.post('/auth/logout');
     } catch {
       // A failed revocation call must not keep the user signed in locally.
     } finally {

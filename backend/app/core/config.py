@@ -16,10 +16,16 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # Session cookie carrying the access token (kept out of the response
+    # body so client-side JS cannot read it). Enable Secure in production.
+    AUTH_COOKIE_SECURE: bool = False
+    AUTH_COOKIE_SAMESITE: str = "lax"
+
     # AI Provider
     AI_PROVIDER: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = ""
+    GEMINI_FALLBACK_MODEL: str = ""
     GEMINI_TIMEOUT: int = 60
     MAX_FOLLOW_UP_QUESTIONS: int = "5"
 

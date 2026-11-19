@@ -4,17 +4,15 @@ const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/
 
 const api = axios.create({
   baseURL,
+  // The session token lives in an HttpOnly cookie set by /auth/login —
+  // it is never readable by JS, so every request must send credentials.
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-
   // Let the browser set the multipart boundary for file uploads.
   if (config.data instanceof FormData) {
     (config.headers as any).delete('Content-Type');
@@ -23,15 +21,16 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
-// On expired/invalid tokens, clear the session and return to login.
+// On expired/invalid sessions, clear local state and return to login.
+// Auth endpoints are excluded so login/register attempts and the
+// anonymous /auth/me probe don't trigger a redirect loop.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error?.response?.status;
     const url: string = error?.config?.url ?? '';
-    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register');
+    const isAuthEndpoint = url.includes('/auth/');
     if (status === 401 && !isAuthEndpoint) {
-      localStorage.removeItem('token');
       localStorage.removeItem('user');
       localStorage.removeItem('currentInterviewId');
       if (window.location.pathname !== '/login') {
