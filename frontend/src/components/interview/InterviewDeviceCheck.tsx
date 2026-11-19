@@ -110,10 +110,15 @@ export const InterviewDeviceCheck: React.FC<InterviewDeviceCheckProps> = ({
               )}
               <li>Browser tab visibility and window focus changes.</li>
             </ul>
+            {isVideo && (
+              <p className="mt-2 text-sm text-gray-600">
+                Face detection for these observations runs locally in your
+                browser — no monitoring frames or images are uploaded. Your
+                interview answers are still recorded and stored securely for
+                transcription and review.
+              </p>
+            )}
             <p className="mt-2 text-sm text-gray-600">
-              {isVideo
-                ? 'Camera frames are processed locally in your browser — no camera frames or images are uploaded or stored. '
-                : ''}
               These observations are not automatic proof of misconduct and do
               not affect your interview score.
             </p>
